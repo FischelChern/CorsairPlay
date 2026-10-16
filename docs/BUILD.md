@@ -169,6 +169,29 @@ The public source archive matches the release tag.
 It excludes runtime identities, signing keys, local configuration, and build output.
 The retired `build-beta.py` helper is no longer part of the build procedure.
 
+## Publish an over-the-air update
+
+The Lincoln build checks its own fork for releases (see `UpdateClient.RELEASES_URL`). Run the
+release script to build, verify, commit, push and publish in one step:
+
+```sh
+scripts/release-lincoln.sh --bump            # 0.2.20 -> 0.2.21, then publish
+scripts/release-lincoln.sh --bump --dry-run  # build and verify only; nothing is published
+```
+
+Two properties of the in-app updater shape the release:
+
+- `UpdateCatalog` ignores a release unless it carries **both** an `.apk` asset and a
+  `SHA256SUMS.txt`. The checksum file lists `sha256  filename`, and the name must match the
+  APK asset exactly or the install aborts on a checksum mismatch.
+- `UpdateVersion.isNewer` compares the **tag** against the installed `versionName` by parsed
+  `x.y.z` numbers. A tag outside that shape, or a tag that is not newer, is read as
+  "up to date", so `--bump` increments `versionName` and `versionCode` before tagging.
+
+The install keeps every setting because the package name and signing key are unchanged.
+The driver updates from Settings -> About -> Check for updates, or from the home-screen
+prompt after the daily background check.
+
 ## Correct build problems
 
 | Symptom | Action |
