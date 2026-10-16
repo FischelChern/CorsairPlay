@@ -972,7 +972,7 @@
     <string name="settings_lincoln_cluster_navigation">Cluster navigation</string>
     <string name="settings_lincoln_cluster_navigation_description">Send the next turn arrow, distance and road to the cluster app. Takes effect at once.</string>
     <string name="settings_lincoln_cluster_music">Cluster song text</string>
-    <string name="settings_lincoln_cluster_music_description">Send the song title and play state (no per-line lyrics). Takes effect at once.</string>
+    <string name="settings_lincoln_cluster_music_description">Send the current line and play state to the cluster: apps that scroll lyrics put the lyric line here, others put the song name. The artist is left off. Takes effect at once.</string>
     <string name="settings_lincoln_cluster_remaining">Cluster remaining distance/time (experimental)</string>
     <string name="settings_lincoln_cluster_remaining_description">Also send the total remaining distance and time. The tested cluster ignores unknown fields, so this is only useful once a probe confirms the field names your cluster accepts.</string>
     <string name="settings_lincoln_cluster_status">Cluster app: %1$s\n%2$s</string>

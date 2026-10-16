@@ -929,7 +929,7 @@
     <string name="settings_lincoln_cluster_navigation">仪表导航</string>
     <string name="settings_lincoln_cluster_navigation_description">向仪表应用发送下一转向箭头、距离和道路名。立即生效。</string>
     <string name="settings_lincoln_cluster_music">仪表歌曲文字</string>
-    <string name="settings_lincoln_cluster_music_description">发送歌曲名称和播放状态（不含逐句歌词）。立即生效。</string>
+    <string name="settings_lincoln_cluster_music_description">向仪表发送当前歌词行和播放状态：支持滚动歌词的应用把歌词行放在这里，其他应用放歌名。不含艺人名。立即生效。</string>
     <string name="settings_lincoln_cluster_remaining">仪表剩余里程/时间（实验性）</string>
     <string name="settings_lincoln_cluster_remaining_description">额外发送总剩余里程和时间。已验证的仪表会忽略未知字段，因此只有在探测确认你的仪表接受的字段名后才有意义。</string>
     <string name="settings_lincoln_cluster_status">仪表应用：%1$s\n%2$s</string>

@@ -2,6 +2,8 @@ package com.shilapi.xcertplay.lincoln
 
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
 import com.shilapi.xcertplay.glance.CarPlayGlance
 
@@ -34,6 +36,28 @@ object LincolnClusterOutput {
     private var musicSent = 0
     private var remainSent = 0
     private var lastReason = "init"
+    // The last state acted on, so the 1 s tick is cheap: an unchanged glance with unchanged
+    // switches is skipped, while a real change (a route expiring, or a switch flipped without a
+    // new frame) still runs the forwarding and clearing below.
+    private var lastSnapshot: CarPlayGlance.Snapshot? = null
+    private var lastNavEnabled: Boolean? = null
+    private var lastMusicEnabled: Boolean? = null
+
+    // Guidance has expiry deadlines (a stale route retires ~30 s after the last frame, and an
+    // empty maneuver list hides after 3 s). Those only advance when snapshot() is called, and a
+    // head unit without the home-screen widget placed never calls it, so a finished route's last
+    // instruction — Apple Maps' "arrived" card — stayed on the cluster until the next connection.
+    // Tick the glance ourselves so the same expiry the widget relies on also clears the cluster.
+    private const val TICK_MILLIS = 1_000L
+    @Volatile private var ticker: HandlerThread? = null
+    @Volatile private var tickHandler: Handler? = null
+    private val tick = object : Runnable {
+        override fun run() {
+            if (context == null) return
+            onSnapshot(CarPlayGlance.snapshot())
+            tickHandler?.postDelayed(this, TICK_MILLIS)
+        }
+    }
 
     /** Called once from the app; attaches to the glance stream and forwards from then on. */
     fun attach(appContext: Context) {
@@ -43,6 +67,7 @@ object LincolnClusterOutput {
         val next: (CarPlayGlance.Snapshot) -> Unit = { onSnapshot(it) }
         listener = next
         CarPlayGlance.addListener(next)
+        startTicking()
         // A session may already be running when the setting is enabled.
         onSnapshot(CarPlayGlance.snapshot())
     }
@@ -51,6 +76,7 @@ object LincolnClusterOutput {
         listener?.let { CarPlayGlance.removeListener(it) }
         listener = null
         context = null
+        stopTicking()
         synchronized(lock) {
             navOwned = false
             musicOwned = false
@@ -59,12 +85,31 @@ object LincolnClusterOutput {
             lastNavKey = null
             lastMusicKey = null
             lastRemainKey = null
+            lastSnapshot = null
+            lastNavEnabled = null
+            lastMusicEnabled = null
         }
     }
 
     fun statusLine(): String = synchronized(lock) {
         "navSent=$navSent musicSent=$musicSent remainSent=$remainSent" +
             " navOwned=$navOwned musicOwned=$musicOwned remainOwned=$remainOwned"
+    }
+
+    private fun startTicking() {
+        if (tickHandler != null) return
+        val thread = HandlerThread("diplay-lincoln-cluster").apply { start() }
+        ticker = thread
+        val handler = Handler(thread.looper)
+        tickHandler = handler
+        handler.postDelayed(tick, TICK_MILLIS)
+    }
+
+    private fun stopTicking() {
+        tickHandler?.removeCallbacksAndMessages(null)
+        tickHandler = null
+        ticker?.quitSafely()
+        ticker = null
     }
 
     /** A short reason the output is currently idle, for the settings screen. */
@@ -78,6 +123,10 @@ object LincolnClusterOutput {
         val app = context ?: return
         val navEnabled = LincolnClusterSettings.navigation(app)
         val musicEnabled = LincolnClusterSettings.music(app)
+        if (snapshot == lastSnapshot && navEnabled == lastNavEnabled && musicEnabled == lastMusicEnabled) return
+        lastSnapshot = snapshot
+        lastNavEnabled = navEnabled
+        lastMusicEnabled = musicEnabled
         val turn = LincolnClusterProtocol.turnCode(snapshot.maneuverType, snapshot.drivingSide)
         val distance = LincolnClusterProtocol.roundDistance(snapshot.distanceMeters)
         lastReason = when {
@@ -169,7 +218,10 @@ object LincolnClusterOutput {
     }
 
     private fun sendMusicLocked(app: Context, snapshot: CarPlayGlance.Snapshot) {
-        val title = LincolnClusterProtocol.sanitizeText(snapshot.song)
+        // The cluster draws one text row. Music apps put the current lyric in the iAP2 title field
+        // and the song name in the artist field, so send the raw title alone: the widget's combined
+        // "title — artist" would otherwise carry the song name along on the lyric line.
+        val title = LincolnClusterProtocol.sanitizeText(snapshot.songTitle ?: snapshot.song)
         if (title == null) {
             clearMusicLocked(app)
             return

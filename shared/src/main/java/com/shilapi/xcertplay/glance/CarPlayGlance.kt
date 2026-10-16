@@ -22,6 +22,12 @@ object CarPlayGlance {
         val remainingSeconds: Long? = null,
         val remainingMeters: Long? = null,
         val song: String? = null,
+        /**
+         * The raw iAP2 title field, for an output that shows only the current line (the
+         * Lincoln/Ford cluster). [song] stays the combined "title — artist" the widget shows;
+         * music apps put the per-line lyric in the title field and the song name in the artist.
+         */
+        val songTitle: String? = null,
         val playing: Boolean = false,
     )
 
@@ -104,6 +110,7 @@ object CarPlayGlance {
             remainingSeconds = maneuver?.remainingSeconds,
             remainingMeters = maneuver?.remainingMeters,
             song = current?.text,
+            songTitle = current?.line,
             playing = current?.playing ?: false,
         )
         if (next == last) return null
