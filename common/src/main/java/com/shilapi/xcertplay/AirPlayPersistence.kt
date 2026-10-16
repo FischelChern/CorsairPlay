@@ -75,6 +75,7 @@ object AirPlayPersistence {
     private const val KEY_WIRED_MEDIA_BUFFER_MS = "wired_media_buffer_ms"
     private const val KEY_MAIN_BUFFERED_AUDIO = "main_buffered_audio"
     private const val KEY_SPEECH_WITHOUT_8_16_KHZ = "speech_without_8_16_khz"
+    private const val KEY_MUSIC_CLOCK_TRIM = "music_clock_trim"
     private const val KEY_CAR_BLUETOOTH_AUDIO = "car_bluetooth_audio"
     private const val KEY_CALL_ECHO_CANCELLATION = "call_echo_cancellation"
     private const val KEY_CALL_VOICE_FILTER = "call_voice_filter"
@@ -127,9 +128,10 @@ object AirPlayPersistence {
     private const val SAFE_AREA_KEY_PREFIX = "safe_area_"
     private const val CUSTOM_ICON_FILE = "airplay-icon.png"
 
-    const val DEFAULT_MANUFACTURER = "DiPlay"
-    const val DEFAULT_MODEL = "DiPlay"
-    const val DEFAULT_OEM_LABEL = "BYD"
+    const val DEFAULT_MANUFACTURER = "Lincoln"
+    const val DEFAULT_MODEL = "Lincoln"
+    // The name CarPlay shows under the "back to the car" button.
+    const val DEFAULT_OEM_LABEL = "Lincoln"
     const val DEFAULT_MFI_I2C_PATH = "/dev/i2c-1"
 
     fun loadAmbientDelaySeconds(context: Context): Int =
@@ -670,6 +672,24 @@ object AirPlayPersistence {
 
     fun saveSpeechWithout8And16Khz(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_SPEECH_WITHOUT_8_16_KHZ, enabled).apply()
+    }
+
+    /**
+     * Trim the music track's playback rate to follow a head unit whose audio clock drifts, so music
+     * does not run dry and pause. On by default; off leaves the native rate untouched.
+     *
+     * Off by default on the Lincoln/Ford Freescale head units: the trim asks the music track for a
+     * slightly different rate about once a second, which holds the platform resampler on for the
+     * whole stream, and that firmware renders it as a faint periodic noise under music. Those units
+     * are the ones that reported it, so they start with the native rate; the setting can turn it back
+     * on if a drifting clock ever pauses music there.
+     */
+    fun loadMusicClockTrim(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_MUSIC_CLOCK_TRIM, !com.shilapi.xcertplay.lincoln.LincolnVehicleVideo.eligible())
+
+    fun saveMusicClockTrim(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_MUSIC_CLOCK_TRIM, enabled).apply()
     }
 
     /** Offer no CarPlay audio, so the iPhone keeps audio on its Bluetooth link with the car; applies at reconnect. */

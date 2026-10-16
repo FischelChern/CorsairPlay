@@ -1,12 +1,26 @@
 package com.shilapi.xcertplay.hud
 
 import android.content.Context
+import android.util.Log
 import com.shilapi.xcertplay.iap2.wire.Iap2Frame
 
 /** Nonblocking boundary between phone control messages and vendor services. */
 object BydNavigationOutputs {
+    private const val TAG = "DiPlay-BYD-Outputs"
+
+    /**
+     * Whether this head unit is a BYD one. Decided once in [onAppOpened]/[start] and then read on the
+     * iAP2 thread, so the Lincoln path never pays for the BYD fan-out.
+     */
+    @Volatile private var bydHeadUnit = false
+
     /** Recover a journaled interrupted output when the app opens, even before a phone reconnects. */
     fun onAppOpened(context: Context) {
+        bydHeadUnit = BydOutputSettings.available(context.applicationContext)
+        // The recovery calls below only read preferences for work an earlier session left unfinished;
+        // they are cheap and must still run so an interrupted BYD output is not left applied. Only the
+        // long-lived workers and the per-frame fan-out are worth skipping on a non-BYD head unit, and
+        // those live in start()/onFrame().
         BydBluetoothSuspend.onAppOpened(context)
         BydOemClusterNavi.restoreIfNeeded(context)
         BydDiLink3ClusterOutput.restoreIfNeeded(context)
@@ -69,6 +83,16 @@ object BydNavigationOutputs {
 
     fun start(context: Context) {
         val app = context.applicationContext
+        // BYD-only subsystem. On a non-BYD head unit (a Lincoln/Ford unit is one) none of these
+        // outputs can bind a vendor service, so starting them would only spawn worker threads and a
+        // one-second ticker that do nothing but marshal every route frame across threads. The
+        // Lincoln/Ford cluster output is a separate path (CarPlayGlance -> LincolnClusterOutput) and
+        // does not run through here.
+        bydHeadUnit = BydOutputSettings.available(app)
+        if (!bydHeadUnit) {
+            Log.i(TAG, "BYD outputs stay idle: no BYD head unit")
+            return
+        }
         useStandalone = BydStandaloneHudOutput.available(app)
         if (useStandalone) standalone.start { BydStandaloneNavigationBridge.initialize(app) }
         else {
@@ -82,6 +106,8 @@ object BydNavigationOutputs {
     }
 
     internal fun onFrame(frame: Iap2Frame) {
+        // Nothing on a non-BYD head unit consumes these frames (see start()).
+        if (!bydHeadUnit) return
         if (frame.messageId == ClusterSongState.NOW_PLAYING_UPDATE) {
             BydClusterSong.onFrame(frame)
             return

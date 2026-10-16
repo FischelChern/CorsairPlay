@@ -202,6 +202,12 @@ class AndroidMediaSink(
     private val callEchoCancellation: Boolean = false,
     /** Cut the bass that head units add when they play a call as music. */
     private val callVoiceFilter: Boolean = false,
+    /**
+     * Trim the music track's playback rate to follow a head unit whose audio clock drifts (#610).
+     * On by default; a head unit that renders the periodic rate changes as a faint artifact can
+     * turn it off, at the cost of a possible music pause every minute or so on a drifting clock.
+     */
+    private val musicClockTrimEnabled: Boolean = true,
     /** Read at each call: a phone or tablet used as the head unit plays calls on its loudspeaker (#701). */
     private val callSpeakerphone: () -> Boolean = { false },
     /**
@@ -219,6 +225,13 @@ class AndroidMediaSink(
     private val vendorLowLatencyDecoder: Boolean = false,
     /** Opt-in MTK ACodec low-latency/no-reorder modes, with per-session automatic fallback. */
     private val mtkDecoderTuningEnabled: Boolean = false,
+    /**
+     * Lincoln/Ford fast video: on those head units (Freescale MEK) the main screen's decoder also gets
+     * a thread that waits on its output, so a frame is shown as soon as it is decoded instead of when
+     * the worker returns. Independent of [vendorLowLatencyDecoder], which asks vendor decoders for
+     * low-latency keys. On by default on that hardware; see [LincolnVehicleVideo].
+     */
+    private val lincolnFastVideo: Boolean = false,
 ) : MediaSink {
     // Each downlink publishes its own reference; a mic must match that stream and sample rate.
     private val callEchoReferences = ConcurrentHashMap<AudioStreamId, EchoReference>()
@@ -686,7 +699,9 @@ class AndroidMediaSink(
         pacingDelayNanos = if (type == MAIN_SCREEN_TYPE && statsLabel == null) videoPacingDelayMillis * 1_000_000L else 0L,
         operatingRate = videoOperatingRate(type, statsLabel, mainVideoFrameRate),
         vendorLowLatency = vendorLowLatencyDecoder,
-        dedicatedOutputThread = vendorLowLatencyDecoder,
+        // The dedicated output thread is what Fast video turns on for the main screen on Lincoln/Ford
+        // hardware: a frame is released as soon as the codec has it, not when the worker next returns.
+        dedicatedOutputThread = vendorLowLatencyDecoder || (lincolnFastVideo && type == MAIN_SCREEN_TYPE && statsLabel == null),
         framesAtOnce = type == MAIN_SCREEN_TYPE && statsLabel == null && videoPacingDelayMillis > 0,
         // Keep the experimental MTK mode on the main CarPlay picture only. Mirrors and the
         // cluster have separate timing and must retain their established decoder configuration.
@@ -722,6 +737,7 @@ class AndroidMediaSink(
                 appContext != null && BydBluetoothSuspend.isSuspendedByUs(appContext),
             echoReference = echoReference,
             voiceFilter = callVoiceFilter && format.audioType == TELEPHONY_AUDIO_TYPE,
+            musicClockTrimEnabled = musicClockTrimEnabled,
         ).also {
             it.setNavigationAttenuationDb(navigationAttenuationDb)
             if (format.audioType == TELEPHONY_AUDIO_TYPE) it.onRoutedToEarpiece = { moveCallToLoudspeaker(id) }
@@ -1743,6 +1759,8 @@ private class AudioRenderer(
     /** Receives the played call audio so the call microphone can cancel its echo. */
     private val echoReference: EchoReference? = null,
     voiceFilter: Boolean = false,
+    /** Trim the music track's playback rate to follow a drifting head-unit clock (#610). */
+    private val musicClockTrimEnabled: Boolean = true,
 ) : Closeable {
     private data class AudioPacket(val rtp: ByteArray, val sample: Int)
 
@@ -2016,7 +2034,11 @@ private class AudioRenderer(
         val capacityBytes = built.bufferSizeInFrames * frameBytes
         startThresholdBytes = MediaAudioBuffer.startBytesFor(plan.startBytes, capacityBytes, PREBUFFER_WRITE_CHUNK_BYTES)
         // Only music plays long enough for the clocks to drift apart; calls keep their echo reference exact.
-        clockTrim = if (mappedChannel == AudioChannel.MEDIA) MediaClockTrim(format.sampleRate, (startThresholdBytes / frameBytes).toLong()) else null
+        // The user can turn the trim off (Settings > Audio) if the head unit renders the rate changes
+        // as an artifact; a drifting clock then pauses music while its buffer refills.
+        clockTrim = if (mappedChannel == AudioChannel.MEDIA && musicClockTrimEnabled) {
+            MediaClockTrim(format.sampleRate, (startThresholdBytes / frameBytes).toLong())
+        } else null
         val trackMetadata = runCatching {
             "api=${Build.VERSION.SDK_INT} trackState=${built.state} trackRate=${built.sampleRate} " +
                 "usage=${trackAttributes?.usage} contentType=${trackAttributes?.contentType} " +

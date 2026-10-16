@@ -109,12 +109,6 @@
             android:theme="@style/Theme.Xcertplay" />
 
         <activity
-            android:name="com.shilapi.xcertplay.MainActivity"
-            android:exported="false"
-            android:resizeableActivity="true"
-            android:theme="@style/Theme.Xcertplay" />
-
-        <activity
             android:name="com.shilapi.xcertplay.ImageCropActivity"
             android:exported="false"
             android:resizeableActivity="true"
@@ -140,7 +134,7 @@
             android:exported="true"
             tools:ignore="ExportedService">
             <intent-filter>
-                <action android:name="com.shihab.diplay.action.EMBED_MAP" />
+                <action android:name="com.corsairplay.action.EMBED_MAP" />
             </intent-filter>
         </service>
 

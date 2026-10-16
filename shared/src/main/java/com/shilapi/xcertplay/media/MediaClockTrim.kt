@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.media
 
 import kotlin.math.exp
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -49,7 +50,13 @@ internal class MediaClockTrim(
         lastUpdateNs = nowNs
         integral = (integral + KI * error * seconds).coerceIn(-MAX_TRIM, MAX_TRIM)
         learnedTrim = integral
-        val next = (sampleRate * (1.0 + (KP * error + integral).coerceIn(-MAX_TRIM, MAX_TRIM))).roundToInt()
+        val raw = (sampleRate * (1.0 + (KP * error + integral).coerceIn(-MAX_TRIM, MAX_TRIM))).roundToInt()
+        // Keep the native rate unless a real drift needs correcting. Any off-rate track makes the
+        // platform resample the whole stream, and a small periodic correction holds that resampler
+        // on continuously, which some head units (e.g. the Lincoln/Ford i.MX8) render as a faint
+        // periodic artifact under music. A genuine drift such as #610's 0.76 % is far above the
+        // deadband, so the correction still engages there.
+        val next = if (abs(raw - sampleRate) < (sampleRate * DEADBAND).roundToInt()) sampleRate else raw
         if (next == rate) return null
         rate = next
         return next
@@ -58,6 +65,8 @@ internal class MediaClockTrim(
     internal companion object {
         /** At most 1.5 % slower or faster: 26 cents, above the 0.76 % seen on #610. */
         const val MAX_TRIM = 0.015
+        /** Below this fraction the native rate is kept, so no resampler is inserted for a small correction. */
+        const val DEADBAND = 0.002
         const val KP = 0.03
         /** Per second, per unit of level error. */
         const val KI = 0.001

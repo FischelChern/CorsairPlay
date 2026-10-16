@@ -301,7 +301,7 @@ internal object CarPlayMediaKeys {
                 if (it) forwardGrantedFocusLocked()
             }
         }
-        session = MediaSession(context, "DiPlay CarPlay").apply {
+        session = MediaSession(context, "Lincoln CarPlay").apply {
             setCallback(callback, mainHandler)
             setMetadata(androidMetadata(nowPlaying, shownArtworkLocked()))
             isActive = true

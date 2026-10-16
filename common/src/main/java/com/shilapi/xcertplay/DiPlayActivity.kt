@@ -121,6 +121,7 @@ internal enum class SettingsSection {
     LOCATION,
     CLUSTER_MAP,
     BYD_NAVIGATION,
+    LINCOLN_CLUSTER,
     PERMISSIONS_AND_HELP,
     LANGUAGE,
 }
@@ -139,7 +140,11 @@ internal object SettingsInformationArchitecture {
         ),
         SettingsCategory.DISPLAY to setOf(SettingsSection.DISPLAY_AND_PERFORMANCE),
         SettingsCategory.AUDIO to setOf(SettingsSection.AUDIO_ROUTING),
-        SettingsCategory.NAVIGATION to setOf(SettingsSection.LOCATION, SettingsSection.BYD_NAVIGATION),
+        SettingsCategory.NAVIGATION to setOf(
+            SettingsSection.LOCATION,
+            SettingsSection.BYD_NAVIGATION,
+            SettingsSection.LINCOLN_CLUSTER,
+        ),
         SettingsCategory.VEHICLE to setOf(
             SettingsSection.CARPLAY_CONTROLS,
             SettingsSection.WHEEL_KEYS,
@@ -1361,8 +1366,10 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     private fun navigationSettings(content: LinearLayout) {
         settingsPageTitle(content, getString(R.string.settings_navigation), getString(R.string.settings_navigation_summary))
         renderSections(content, SettingsInformationArchitecture.sectionsByCategory.getValue(SettingsCategory.NAVIGATION))
-        // The BYD card is hidden without its receiver; say so instead of leaving a gap.
-        if (!BydOutputSettings.available(this)) {
+        // The BYD card is hidden without its receiver; say so instead of leaving a gap. On a
+        // Lincoln/Ford unit there is nothing BYD to explain, and the cluster card above is the one
+        // that applies, so the note would only be noise there.
+        if (!com.shilapi.xcertplay.lincoln.LincolnVehicle.eligible(this) && !BydOutputSettings.available(this)) {
             content.addView(label(getString(R.string.settings_byd_navigation_unavailable), 15, MUTED).apply {
                 setPadding(dp(4), 0, dp(4), dp(SETTINGS_BLOCK_GAP_DP))
             })
@@ -1672,6 +1679,9 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     }
 
     private fun advancedVehicleDataSettings(content: LinearLayout) {
+        // The whole card reads BYD vehicle fields over ADB (battery, range, gear, speed). On a
+        // Lincoln/Ford head unit there is no BYD receiver for any of it, so the card is not shown.
+        if (com.shilapi.xcertplay.lincoln.LincolnVehicle.eligible(this)) return
         section(content, getString(R.string.settings_vehicle), R.drawable.ic_dp_dashboard) { card ->
             card.addView(button(getString(if (bydVehicleAdvancedExpanded)
                 R.string.hide_advanced_vehicle_data else R.string.advanced_vehicle_data), false) {
@@ -1996,6 +2006,14 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 AirPlayPersistence.saveLowLatencyDecoder(this, it)
                 markReconnectNeeded()
             }
+            if (com.shilapi.xcertplay.lincoln.LincolnVehicleVideo.eligible()) {
+                toggle(card, getString(R.string.settings_lincoln_fast_video),
+                    getString(R.string.settings_lincoln_fast_video_description),
+                    com.shilapi.xcertplay.lincoln.LincolnVehicleVideo.independentOutput(this)) {
+                    com.shilapi.xcertplay.lincoln.LincolnVehicleVideo.setIndependentOutput(this, it)
+                    markReconnectNeeded()
+                }
+            }
             toggle(card, getString(R.string.call_echo_cancellation), getString(R.string.call_echo_cancellation_description),
                 AirPlayPersistence.loadCallEchoCancellation(this)) {
                 AirPlayPersistence.saveCallEchoCancellation(this, it)
@@ -2040,6 +2058,11 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 AirPlayPersistence.saveSpeechWithout8And16Khz(this, it)
                 reconnectIfRunning()
             }
+            toggle(card, getString(R.string.settings_music_clock_trim), getString(R.string.settings_music_clock_trim_description),
+                AirPlayPersistence.loadMusicClockTrim(this)) {
+                AirPlayPersistence.saveMusicClockTrim(this, it)
+                reconnectIfRunning()
+            }
             toggle(card, getString(R.string.settings_car_bluetooth_audio), getString(R.string.settings_car_bluetooth_audio_description),
                 AirPlayPersistence.loadCarBluetoothAudio(this)) {
                 AirPlayPersistence.saveCarBluetoothAudio(this, it)
@@ -2081,10 +2104,13 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             getString(R.string.settings_navigation_wheel_volume), R.drawable.ic_dp_audio) { card ->
             navigationWheelControls(card)
         }
-        filteredSection(content, SettingsSection.AMBIENT_LIGHTING, getString(R.string.settings_ambient_title)) { card ->
-            card.addView(button(ambientConfigurationLabel(AmbientMusicSettings.load(this)), false) {
-                showAmbientConfiguration()
-            }, matchButton(0, 60))
+        // Ambient lighting drives BYD's lamp interface only, so it is hidden on a Lincoln/Ford unit.
+        if (!com.shilapi.xcertplay.lincoln.LincolnVehicle.eligible(this)) {
+            filteredSection(content, SettingsSection.AMBIENT_LIGHTING, getString(R.string.settings_ambient_title)) { card ->
+                card.addView(button(ambientConfigurationLabel(AmbientMusicSettings.load(this)), false) {
+                    showAmbientConfiguration()
+                }, matchButton(0, 60))
+            }
         }
         filteredSection(content, SettingsSection.LOCATION,
             getString(R.string.location), R.drawable.ic_dp_navigation) { card ->
@@ -2416,7 +2442,10 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             }
             if (bydNavigation) clusterSongSwitch(card)
         }
-        lincolnClusterSection(content)
+        if (com.shilapi.xcertplay.lincoln.LincolnVehicle.eligible(this)) {
+            filteredSection(content, SettingsSection.LINCOLN_CLUSTER,
+                getString(R.string.settings_lincoln_cluster), R.drawable.ic_dp_navigation, ::lincolnClusterSection)
+        }
         filteredSection(content, SettingsSection.PERMISSIONS_AND_HELP,
             getString(R.string.permissions_and_connection_help), R.drawable.ic_dp_permissions) { card ->
             card.addView(label(getString(R.string.nearby_devices_connects_your_iphone_microphone_enables_sir), 16, MUTED))
@@ -2747,7 +2776,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         }
     }
 
-    private fun userAgent() = "DiPlay/${version()}"
+    private fun userAgent() = "Lincoln/${version()}"
 
     // An opted-in connection prepares the hotspot in the controller instead of stopping at this reminder.
     private fun carHotspotOff(): Boolean =
@@ -3831,7 +3860,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         })
         body.addView(button(getString(R.string.copy_command), false) {
             getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(
-                android.content.ClipData.newPlainText("DiPlay ADB Command", adbCmd)
+                android.content.ClipData.newPlainText("Lincoln ADB Command", adbCmd)
             )
             toast(getString(R.string.copied_to_the_car_clipboard_run_the_command_on_your_comput))
         }, matchButton(8, 50))
@@ -4085,31 +4114,28 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
      * Lincoln/Ford cluster forwarding. Shown only on a head unit that has the cluster app (or the
      * tested firmware), and off by default; it never competes with the BYD card on a BYD car.
      */
-    private fun lincolnClusterSection(content: LinearLayout) {
-        if (!com.shilapi.xcertplay.lincoln.LincolnClusterSettings.available(this)) return
-        section(content, getString(R.string.settings_lincoln_cluster), R.drawable.ic_dp_navigation) { card ->
-            card.addView(label(getString(R.string.settings_lincoln_cluster_description), 15, MUTED))
-            toggle(card, getString(R.string.settings_lincoln_cluster_navigation),
-                getString(R.string.settings_lincoln_cluster_navigation_description),
-                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.navigation(this)) {
-                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.setNavigation(this, it)
-                if (it) com.shilapi.xcertplay.lincoln.LincolnClusterOutput.attach(applicationContext)
-            }
-            toggle(card, getString(R.string.settings_lincoln_cluster_music),
-                getString(R.string.settings_lincoln_cluster_music_description),
-                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.music(this)) {
-                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.setMusic(this, it)
-                if (it) com.shilapi.xcertplay.lincoln.LincolnClusterOutput.attach(applicationContext)
-            }
-            toggle(card, getString(R.string.settings_lincoln_cluster_remaining),
-                getString(R.string.settings_lincoln_cluster_remaining_description),
-                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.remaining(this)) {
-                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.setRemaining(this, it)
-            }
-            card.addView(label(getString(R.string.settings_lincoln_cluster_status,
-                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.clusterPackage(this),
-                com.shilapi.xcertplay.lincoln.LincolnClusterOutput.statusLine()), 14, MUTED))
+    private fun lincolnClusterSection(card: LinearLayout) {
+        card.addView(label(getString(R.string.settings_lincoln_cluster_description), 15, MUTED))
+        toggle(card, getString(R.string.settings_lincoln_cluster_navigation),
+            getString(R.string.settings_lincoln_cluster_navigation_description),
+            com.shilapi.xcertplay.lincoln.LincolnClusterSettings.navigation(this)) {
+            com.shilapi.xcertplay.lincoln.LincolnClusterSettings.setNavigation(this, it)
+            if (it) com.shilapi.xcertplay.lincoln.LincolnClusterOutput.attach(applicationContext)
         }
+        toggle(card, getString(R.string.settings_lincoln_cluster_music),
+            getString(R.string.settings_lincoln_cluster_music_description),
+            com.shilapi.xcertplay.lincoln.LincolnClusterSettings.music(this)) {
+            com.shilapi.xcertplay.lincoln.LincolnClusterSettings.setMusic(this, it)
+            if (it) com.shilapi.xcertplay.lincoln.LincolnClusterOutput.attach(applicationContext)
+        }
+        toggle(card, getString(R.string.settings_lincoln_cluster_remaining),
+            getString(R.string.settings_lincoln_cluster_remaining_description),
+            com.shilapi.xcertplay.lincoln.LincolnClusterSettings.remaining(this)) {
+            com.shilapi.xcertplay.lincoln.LincolnClusterSettings.setRemaining(this, it)
+        }
+        card.addView(label(getString(R.string.settings_lincoln_cluster_status,
+            com.shilapi.xcertplay.lincoln.LincolnClusterSettings.clusterPackage(this),
+            com.shilapi.xcertplay.lincoln.LincolnClusterOutput.statusLine()), 14, MUTED))
     }
 
     /** The 0.2.9 Dashboard song setting, shown once: in the BYD navigation card, or under Advanced vehicle data. */
@@ -5470,7 +5496,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         }, "adb-cluster-authorize").start()
     }
 
-    private fun reportFileName() = "DiPlay-${SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())}.txt"
+    private fun reportFileName() = "Lincoln-${SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date())}.txt"
 
     private fun saveReportToDownloads() {
         if (exportInProgress) return
@@ -5512,7 +5538,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                         .setMessage(when {
                             savedReport.savedInApp -> getString(R.string.diagnostic_report_saved_in_app)
                             savedReport.savedPath != null -> getString(R.string.diagnostic_report_saved_to_path, savedReport.savedPath)
-                            uri == null -> "Downloads/DiPlay/$fileName"
+                            uri == null -> "Downloads/Lincoln/$fileName"
                             else -> getString(R.string.your_report_was_saved_to_the_selected_location)
                         })
                         .setPositiveButton(getString(R.string.view_diagnostic_report)) { _, _ -> showDiagnosticReport(report) }
@@ -5538,7 +5564,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
 
     /** The text of a diagnostic report. It reads the session logs, so call it off the main thread. */
     private fun diagnosticReportText(appContext: Context): String = buildString {
-        appendLine("DiPlay ${version()} · private beta diagnostic report")
+        appendLine("Lincoln ${version()} · diagnostic report")
         appendLine("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
         appendLine("Head unit: ${Build.MANUFACTURER} ${Build.MODEL}")
         appendLine("Connection: ${if (AirPlayPersistence.loadWirelessEnabled(appContext)) "wireless" else "USB"}")

@@ -200,6 +200,32 @@ class BydHudRouteStateTest {
         assertNull(state.currentApple())
     }
 
+    @Test
+    fun `routeActive stays true through an empty maneuver list so the cluster does not flicker`() {
+        var now = 0L
+        val state = populatedState(nanoTime = { now })
+        assertEquals(true, state.routeActive())
+
+        // The iPhone's periodic empty current list: current() blanks after 3 s, but the route is
+        // still running, so an output that holds its last card keeps it.
+        state.accept(BydHudRouteState.ROUTE_GUIDANCE_UPDATE, tlvs(tlv(0x01, 1), tlv(0x0d)))
+        now = 4_000_000_000L
+        assertNull(state.current())
+        assertEquals(true, state.routeActive())
+    }
+
+    @Test
+    fun `routeActive is false once a route truly ends or goes silent`() {
+        var now = 0L
+        val state = populatedState(nanoTime = { now })
+        state.accept(BydHudRouteState.ROUTE_GUIDANCE_UPDATE, tlvs(tlv(0x01, 2)))
+        assertEquals(false, state.routeActive())
+
+        val silent = populatedState(nanoTime = { now })
+        now = 30_000_000_000L
+        assertEquals(false, silent.routeActive())
+    }
+
     private fun utf8z(value: String): IntArray =
         (value.toByteArray(Charsets.UTF_8).map { it.toInt() and 0xff } + 0).toIntArray()
 

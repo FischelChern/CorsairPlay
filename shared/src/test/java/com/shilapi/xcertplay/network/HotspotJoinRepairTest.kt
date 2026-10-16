@@ -12,7 +12,7 @@ class HotspotJoinRepairTest {
         for (bad in listOf("APPLIED", "$reply\n$reply", "$reply\nextra", "DIPLAY_HOTSPOT_JOIN_V1|READY|password|0")) {
             assertEquals(HotspotJoinRepair.Code.UNKNOWN, HotspotJoinRepair.parse(bad).code)
         }
-        val command = HotspotJoinRepair.command("/data/app/with'quote/base.apk", "com.shihab.diplay",
+        val command = HotspotJoinRepair.command("/data/app/with'quote/base.apk", "com.corsairplay",
             "apply", token, token)
         assertTrue(command.contains("app_process"))
         assertTrue(command.contains("'\"'\"'"))

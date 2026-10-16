@@ -15,6 +15,13 @@ object CarPlayGlance {
     data class Snapshot(
         val connected: Boolean = false,
         val maneuverType: Int? = null,
+        /**
+         * A route is still running even though [maneuverType] may be momentarily null (the iPhone's
+         * empty current-maneuver list, or the stale window). Outputs that must not flicker — the
+         * Lincoln/Ford cluster — keep the last instruction while this is true and only clear when a
+         * route genuinely ends.
+         */
+        val routeActive: Boolean = false,
         val drivingSide: Int = 0,
         val distanceMeters: Int = 0,
         val road: String = "",
@@ -103,6 +110,7 @@ object CarPlayGlance {
         val next = Snapshot(
             connected = connected,
             maneuverType = maneuver?.type,
+            routeActive = route.routeActive(),
             drivingSide = maneuver?.drivingSide ?: 0,
             distanceMeters = maneuver?.distanceMeters ?: 0,
             road = maneuver?.road.orEmpty(),

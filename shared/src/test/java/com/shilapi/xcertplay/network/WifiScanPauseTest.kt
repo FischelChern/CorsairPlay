@@ -55,9 +55,9 @@ class WifiScanPauseTest {
     @Test
     fun startsTheHelperFromTheInstalledApkAsTheShellUser() {
         assertEquals(
-            "CLASSPATH='/data/app/~~a/com.shihab.diplay-b/base.apk' app_process /system/bin " +
+            "CLASSPATH='/data/app/~~a/com.corsairplay-b/base.apk' app_process /system/bin " +
                 "com.shilapi.xcertplay.network.WifiScanPauseMain pause",
-            WifiScanPause.command("/data/app/~~a/com.shihab.diplay-b/base.apk", enabled = false),
+            WifiScanPause.command("/data/app/~~a/com.corsairplay-b/base.apk", enabled = false),
         )
         assertEquals(
             "CLASSPATH='/data/it'\"'\"'s/base.apk' app_process /system/bin " +

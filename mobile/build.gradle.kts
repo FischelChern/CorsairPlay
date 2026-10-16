@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
 }
 
 // Optional local-only input. CI and ordinary source builds contain no accessory identity.
@@ -14,7 +13,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.shihab.diplay"
+        applicationId = "com.corsairplay"
         minSdk = 25
         targetSdk = 37
         versionCode = 39
@@ -41,11 +40,30 @@ android {
         debug {
             applicationIdSuffix = ".hudtest"
             versionNameSuffix = "-hud-test"
+            // The standalone car-test APK is installed on the head unit as-is, so optimize it the
+            // way a release would: R8 shrinks and renames, and unused resources are dropped. The
+            // keep rules in proguard-rules.pro cover the shell/JNI/reflection entry points that R8
+            // cannot see. Signing is unchanged (still the debug key) so it installs over the old
+            // debug build.
+            optimization {
+                enable = true
+            }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
         release {
+            // The car build is the one users install, so optimize it: R8 strips the unused BYD
+            // vendor paths and renames, and the keep rules in proguard-rules.pro cover the shell/JNI
+            // entry points R8 cannot see. Matches the hud-test build the car has been verified with.
             optimization {
-                enable = false
+                enable = true
             }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -53,24 +71,26 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
-    buildFeatures {
-        compose = true
+    packaging {
+        resources {
+            // BouncyCastle ships lookup tables for every algorithm it supports. This build only
+            // uses ASN.1 parsing and the Ed25519/X25519/ChaCha20/SHA-512 primitives, so the
+            // post-quantum signature tables (~1.2 MB) and the localized certificate-reviewer
+            // strings are dead weight R8 cannot see (they are plain resource files).
+            excludes += setOf(
+                "org/bouncycastle/pqc/**",
+                "org/bouncycastle/x509/CertPathReviewerMessages*.properties",
+            )
+        }
     }
 }
 
 dependencies {
-    implementation(platform(libs.androidx.compose.bom))
     implementation(project(":common"))
     implementation(project(":shared"))
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.app.projected)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.activity)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    debugImplementation(libs.androidx.compose.ui.tooling)
 }
 
 // No implicit import. Only the two explicitly selected local runtime assets are allowed.

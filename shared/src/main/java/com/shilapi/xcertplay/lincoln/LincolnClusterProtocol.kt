@@ -2,7 +2,7 @@ package com.shilapi.xcertplay.lincoln
 
 /**
  * Lincoln/Ford instrument-cluster forwarding, reverse-engineered from the field build
- * `0.2.20-lincoln-preview19` (`com.shihab.diplay.android81`).
+ * `0.2.20-lincoln-preview19` (`com.lincolnpay.android81`).
  *
  * The cluster app draws its own dashboard card and receives plain broadcasts; DiPlay only has to
  * translate CarPlay's iAP2 guidance (0x5201/0x5202) and now-playing (0x5001) into their extras.

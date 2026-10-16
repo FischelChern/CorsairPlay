@@ -77,6 +77,26 @@ internal class BydHudRouteState(
         )
     }
 
+    /**
+     * Whether a route is still running with recent guidance, even while [current]/[currentApple]
+     * momentarily return null because the iPhone sent an empty current-maneuver list — which it does
+     * every few seconds, and through a reroute. Outputs that must not flicker during those brief gaps
+     * (the Lincoln/Ford cluster) use this to hold the last instruction instead of blanking it.
+     *
+     * This is deliberately stricter than [current]'s maneuver list but looser than its 3 s empty-list
+     * hide: a route that has gone completely silent past [staleRouteNs], and one ended by
+     * Arrived/NoRouteSet (which [clear]s), are both false, so a genuinely finished or dead route still
+     * clears the output.
+     */
+    fun routeActive(): Boolean {
+        if (!routeActive) return false
+        val updated = lastRouteUpdateNs ?: return false
+        if (nanoTime() - updated >= staleRouteNs) return false
+        val noRouteSince = noRouteSinceNs
+        if (noRouteSince != null && nanoTime() - noRouteSince >= noRouteHideNs) return false
+        return true
+    }
+
     /** Next maneuver as Apple sent it, for outputs with a richer icon set than the HUD. */
     fun currentApple(): BydAppleManeuver? {
         val maneuver = activeManeuver() ?: return null

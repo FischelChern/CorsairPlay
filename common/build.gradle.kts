@@ -1,6 +1,5 @@
 plugins {
     id("com.android.library")
-    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -18,10 +17,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    buildFeatures {
-        compose = true
-    }
-
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // The UI suite covers several SDKs and locale-specific resource sandboxes.
@@ -31,12 +26,9 @@ android {
 
 dependencies {
     api(project(":shared"))
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
+    // ComponentActivity, used directly by DiPlayActivity and CarPlayHostActivity. Compose itself is
+    // not used anywhere in this build (the old board-diagnostic screen was removed).
+    implementation(libs.androidx.activity)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.work.runtime)

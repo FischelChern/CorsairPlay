@@ -29,6 +29,14 @@ object LincolnClusterOutput {
     // left by an earlier session instead of only stopping new writes.
     private var navStateOn: Boolean? = null
     private var lastNavKey: String? = null
+    // The instruction last written to the cluster, so the same one can be repeated. The cluster
+    // retires a nav card it has not heard about for a few seconds, which read as the card blinking
+    // out and back on the way to the next turn; the working standalone bridge re-sent every second,
+    // and so does this.
+    private var lastNavTurn: String? = null
+    private var lastNavDistance: Int? = null
+    private var lastNavRoad: String = ""
+    private var lastNavSentNs = 0L
     private var lastMusicKey: String? = null
     private var lastRemainKey: String? = null
     private var remainOwned = false
@@ -49,6 +57,10 @@ object LincolnClusterOutput {
     // instruction — Apple Maps' "arrived" card — stayed on the cluster until the next connection.
     // Tick the glance ourselves so the same expiry the widget relies on also clears the cluster.
     private const val TICK_MILLIS = 1_000L
+    // Repeat the current card at this cadence while it is unchanged. The cluster hides a nav card it
+    // has not heard about within a few seconds; the firmware's own standalone bridge re-sent every
+    // second, which is why its card was steady.
+    private const val REPEAT_NAV_NS = 1_000_000_000L
     @Volatile private var ticker: HandlerThread? = null
     @Volatile private var tickHandler: Handler? = null
     private val tick = object : Runnable {
@@ -83,6 +95,10 @@ object LincolnClusterOutput {
             remainOwned = false
             navStateOn = null
             lastNavKey = null
+            lastNavTurn = null
+            lastNavDistance = null
+            lastNavRoad = ""
+            lastNavSentNs = 0L
             lastMusicKey = null
             lastRemainKey = null
             lastSnapshot = null
@@ -123,7 +139,14 @@ object LincolnClusterOutput {
         val app = context ?: return
         val navEnabled = LincolnClusterSettings.navigation(app)
         val musicEnabled = LincolnClusterSettings.music(app)
-        if (snapshot == lastSnapshot && navEnabled == lastNavEnabled && musicEnabled == lastMusicEnabled) return
+        if (snapshot == lastSnapshot && navEnabled == lastNavEnabled && musicEnabled == lastMusicEnabled) {
+            // Nothing changed, but the cluster still retires a nav card it has not heard about within
+            // a few seconds, so keep repeating the current one (the send itself is throttled).
+            if (navEnabled && snapshot.connected && navStateOn == true) {
+                synchronized(lock) { repeatLastNavLocked(app) }
+            }
+            return
+        }
         lastSnapshot = snapshot
         lastNavEnabled = navEnabled
         lastMusicEnabled = musicEnabled
@@ -164,7 +187,21 @@ object LincolnClusterOutput {
     private fun sendNavLocked(app: Context, snapshot: CarPlayGlance.Snapshot) {
         val turn = LincolnClusterProtocol.turnCode(snapshot.maneuverType, snapshot.drivingSide)
         val distance = LincolnClusterProtocol.roundDistance(snapshot.distanceMeters)
-        if (snapshot.maneuverType == null || turn == null || distance == null) {
+        if (snapshot.maneuverType == null) {
+            // The iPhone briefly sends an empty current-maneuver list every few seconds and while
+            // rerouting; the route parser keeps routeActive set through that gap. Hold the last
+            // instruction on the cluster instead of blanking and redrawing it a moment later, which
+            // read as flicker. Re-send it on the same cadence as a fresh one, because the cluster
+            // hides a card it has not heard about within a few seconds. Only a genuine route end
+            // (Arrived/NoRouteSet, routeActive false) or a session drop clears the cluster.
+            if (snapshot.routeActive && navStateOn == true) {
+                repeatLastNavLocked(app)
+                return
+            }
+            clearNavLocked(app)
+            return
+        }
+        if (turn == null || distance == null) {
             clearNavLocked(app)
             return
         }
@@ -176,16 +213,46 @@ object LincolnClusterOutput {
                 navStateOn = true
             }
         }
-        if (navOwned && key != lastNavKey) {
+        if (!navOwned) return
+        val road = LincolnClusterProtocol.sanitizeText(snapshot.road).orEmpty()
+        val changed = key != lastNavKey
+        // Repeat the current card at least once a second even when nothing changed: the cluster hides
+        // a nav card it has not heard about within a few seconds, so a long leg or a red light made it
+        // blink out and back. The standalone bridge that this firmware ships with re-sent every second.
+        val due = System.nanoTime() - lastNavSentNs >= REPEAT_NAV_NS
+        if (changed || due) {
             val info = Intent(LincolnClusterProtocol.ACTION_NAV_INFO)
                 .putExtra(LincolnClusterProtocol.EXTRA_NAME, turn)
                 .putExtra(LincolnClusterProtocol.EXTRA_DISTANCE, distance)
-                .putExtra(LincolnClusterProtocol.EXTRA_ROAD, LincolnClusterProtocol.sanitizeText(snapshot.road).orEmpty())
+                .putExtra(LincolnClusterProtocol.EXTRA_ROAD, road)
             if (broadcast(app, info)) {
                 lastNavKey = key
+                lastNavTurn = turn
+                lastNavDistance = distance
+                lastNavRoad = road
+                lastNavSentNs = System.nanoTime()
                 navSent++
-                Log.i(TAG, "nav INFO $turn ${distance}m '${snapshot.road}' (#$navSent)")
+                if (changed) Log.i(TAG, "nav INFO $turn ${distance}m '${snapshot.road}' (#$navSent)")
             }
+        }
+    }
+
+    /**
+     * Re-send the card already on the cluster while the route is still running but the iPhone's
+     * current-maneuver list is briefly empty. The cluster hides a card it has not heard about within
+     * a few seconds, so without this the held card would still time out and blink.
+     */
+    private fun repeatLastNavLocked(app: Context) {
+        val turn = lastNavTurn ?: return
+        val distance = lastNavDistance ?: return
+        if (System.nanoTime() - lastNavSentNs < REPEAT_NAV_NS) return
+        val info = Intent(LincolnClusterProtocol.ACTION_NAV_INFO)
+            .putExtra(LincolnClusterProtocol.EXTRA_NAME, turn)
+            .putExtra(LincolnClusterProtocol.EXTRA_DISTANCE, distance)
+            .putExtra(LincolnClusterProtocol.EXTRA_ROAD, lastNavRoad)
+        if (broadcast(app, info)) {
+            lastNavSentNs = System.nanoTime()
+            navSent++
         }
     }
 
@@ -255,6 +322,10 @@ object LincolnClusterOutput {
             navOwned = false
             navStateOn = false
             lastNavKey = null
+            lastNavTurn = null
+            lastNavDistance = null
+            lastNavRoad = ""
+            lastNavSentNs = 0L
             Log.i(TAG, "nav cleared")
         }
     }

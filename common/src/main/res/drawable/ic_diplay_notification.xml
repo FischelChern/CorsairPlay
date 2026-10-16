@@ -1,3 +1,17 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-    <path android:fillColor="#FFFFFFFF" android:pathData="M3,4L21,4L21,18L14,18L14,20L10,20L10,18L3,18ZM5,6L5,16L19,16L19,6ZM10,8L16,11L10,14Z" android:fillType="evenOdd" />
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Lincoln-style star emblem: a tall shield outline crossed by a plus. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M9,3 L15,3 C16.1,3 16.6,3.7 16.5,4.8 L15.2,18.2 C15.1,19.3 14.4,20 13.4,20 L10.6,20 C9.6,20 8.9,19.3 8.8,18.2 L7.5,4.8 C7.4,3.7 7.9,3 9,3 Z M10.2,4.6 L9.2,18 C9.15,18.5 9.4,18.6 9.8,18.6 L14.2,18.6 C14.6,18.6 14.85,18.5 14.8,18 L13.8,4.6 C13.75,4.2 13.5,4.4 13.2,4.4 L10.8,4.4 C10.5,4.4 10.25,4.2 10.2,4.6 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11.15,3.6 h1.7 v16.8 h-1.7 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.1,10.6 h7.8 v1.7 h-7.8 Z" />
 </vector>
