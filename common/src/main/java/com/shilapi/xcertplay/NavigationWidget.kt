@@ -53,7 +53,7 @@ internal object NavigationWidgetUpdater {
     fun attach(appContext: Context) {
         if (context != null) return
         context = appContext.applicationContext
-        CarPlayGlance.listener = { worker.post(::schedule) }
+        CarPlayGlance.addListener { worker.post(::schedule) }
         worker.post(::schedule)
     }
 

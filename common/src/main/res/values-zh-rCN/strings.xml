@@ -924,4 +924,13 @@
     <string name="settings_write_settings_allow">允许权限</string>
     <string name="settings_wifi_direct_scan_pause">CarPlay 期间暂停车机 Wi-Fi 搜索 · 需要 ADB</string>
     <string name="settings_wifi_direct_scan_pause_description">Wi-Fi 直连时，车机每隔几秒搜索一次 Wi-Fi 网络，每次搜索都会让音乐和画面卡顿。开启后，CarPlay 运行期间 DiPlay 会暂停这个搜索。这段时间车机也不会自动连接已知网络（例如手机热点），可以在车机 Wi-Fi 设置里手动连接；CarPlay 结束后恢复。关闭后车机可以自动连接。下次连接时生效。</string>
+    <string name="settings_lincoln_cluster">林肯/福特仪表</string>
+    <string name="settings_lincoln_cluster_description">向已验证的林肯/福特仪表应用转发 CarPlay 导航指引和歌曲文字。默认关闭；请先卸载独立仪表插件，避免同时使用原车导航。</string>
+    <string name="settings_lincoln_cluster_navigation">仪表导航</string>
+    <string name="settings_lincoln_cluster_navigation_description">向仪表应用发送下一转向箭头、距离和道路名。立即生效。</string>
+    <string name="settings_lincoln_cluster_music">仪表歌曲文字</string>
+    <string name="settings_lincoln_cluster_music_description">发送歌曲名称和播放状态（不含逐句歌词）。立即生效。</string>
+    <string name="settings_lincoln_cluster_remaining">仪表剩余里程/时间（实验性）</string>
+    <string name="settings_lincoln_cluster_remaining_description">额外发送总剩余里程和时间。已验证的仪表会忽略未知字段，因此只有在探测确认你的仪表接受的字段名后才有意义。</string>
+    <string name="settings_lincoln_cluster_status">仪表应用：%1$s\n%2$s</string>
 </resources>

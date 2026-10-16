@@ -128,4 +128,30 @@ class CarPlayGlanceTest {
         assertEquals(before, CarPlayGlance.snapshot())
         assertEquals(0, calls)
     }
+
+    @Test
+    fun twoConsumersBothReceiveUpdates() {
+        // The home-screen widget and the Lincoln cluster output both follow the glance; a single
+        // listener slot let the later attach replace the earlier one.
+        val first = mutableListOf<CarPlayGlance.Snapshot>()
+        val second = mutableListOf<CarPlayGlance.Snapshot>()
+        val a: (CarPlayGlance.Snapshot) -> Unit = { first += it }
+        val b: (CarPlayGlance.Snapshot) -> Unit = { second += it }
+        CarPlayGlance.addListener(a)
+        CarPlayGlance.addListener(b)
+
+        CarPlayGlance.setConnected(true)
+        CarPlayGlance.onFrame(frame(0x5202) { u16(1, 1); u8(3, 2) })
+        CarPlayGlance.onFrame(frame(0x5201) { u8(1, 1); u16List(0x0d, listOf(1)) })
+
+        assertTrue(first.isNotEmpty())
+        assertTrue(second.isNotEmpty())
+        assertEquals(first.last(), second.last())
+
+        CarPlayGlance.removeListener(b)
+        val beforeSecond = second.size
+        CarPlayGlance.onFrame(frame(0x5001) { group(0) { string(1, "Song") } })
+        assertTrue(first.size > 1)
+        assertEquals(beforeSecond, second.size)
+    }
 }

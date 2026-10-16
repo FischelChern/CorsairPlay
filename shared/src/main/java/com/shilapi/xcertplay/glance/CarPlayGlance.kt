@@ -3,6 +3,7 @@ package com.shilapi.xcertplay.glance
 import com.shilapi.xcertplay.hud.BydHudRouteState
 import com.shilapi.xcertplay.hud.ClusterSongState
 import com.shilapi.xcertplay.iap2.wire.Iap2Frame
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * What CarPlay is doing, at a glance, for widgets and other screens outside CarPlay: the next
@@ -29,13 +30,38 @@ object CarPlayGlance {
     private var connected = false
     private var last = Snapshot()
 
-    /** Called with each new snapshot, on the thread that changed it. */
-    @Volatile var listener: ((Snapshot) -> Unit)? = null
+    // More than one consumer follows the glance (the home-screen widget and, on a Lincoln/Ford
+    // head unit, the cluster output). A single listener slot let the later attach silently
+    // replace the earlier one, so forwarding stopped as soon as CarPlay opened the widget.
+    private val listeners = CopyOnWriteArrayList<(Snapshot) -> Unit>()
+
+    /**
+     * Called with each new snapshot, on the thread that changed it. Setting this replaces every
+     * listener; prefer [addListener]/[removeListener] when another consumer may also be attached.
+     */
+    var listener: ((Snapshot) -> Unit)?
+        get() = listeners.firstOrNull()
+        set(value) {
+            listeners.clear()
+            if (value != null) listeners.add(value)
+        }
+
+    fun addListener(l: (Snapshot) -> Unit) {
+        if (!listeners.contains(l)) listeners.add(l)
+    }
+
+    fun removeListener(l: (Snapshot) -> Unit) {
+        listeners.remove(l)
+    }
+
+    private fun notifyListeners(snapshot: Snapshot) {
+        for (l in listeners) runCatching { l(snapshot) }
+    }
 
     /** Refresh time-dependent guidance even when no new metadata frame has arrived. */
     fun snapshot(): Snapshot {
         val (changed, current) = synchronized(this) { publishLocked() to last }
-        changed?.let { listener?.invoke(it) }
+        changed?.let { notifyListeners(it) }
         return current
     }
 
@@ -49,7 +75,7 @@ object CarPlayGlance {
             }
             publishLocked()
         }
-        changed?.let { listener?.invoke(it) }
+        changed?.let { notifyListeners(it) }
     }
 
     fun setConnected(next: Boolean) {
@@ -62,7 +88,7 @@ object CarPlayGlance {
             }
             publishLocked()
         }
-        changed?.let { listener?.invoke(it) }
+        changed?.let { notifyListeners(it) }
     }
 
     private fun publishLocked(): Snapshot? {

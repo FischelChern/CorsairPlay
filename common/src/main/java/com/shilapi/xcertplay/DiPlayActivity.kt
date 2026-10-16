@@ -374,6 +374,9 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         languagePreferenceAtCreate = AppLocale.preference(this)
         com.shilapi.xcertplay.hud.BydNavigationOutputs.onAppOpened(applicationContext)
         PhoneAudioRoute.attach(applicationContext)
+        // Attach unconditionally; the output checks its own switches on every snapshot.
+        com.shilapi.xcertplay.lincoln.LincolnClusterOutput.attach(applicationContext)
+        WheelKeyService.restoreIfNeeded(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
         if (Build.VERSION.SDK_INT >= 28) {
             window.attributes = window.attributes.apply {
@@ -2413,6 +2416,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             }
             if (bydNavigation) clusterSongSwitch(card)
         }
+        lincolnClusterSection(content)
         filteredSection(content, SettingsSection.PERMISSIONS_AND_HELP,
             getString(R.string.permissions_and_connection_help), R.drawable.ic_dp_permissions) { card ->
             card.addView(label(getString(R.string.nearby_devices_connects_your_iphone_microphone_enables_sir), 16, MUTED))
@@ -4075,6 +4079,37 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             WheelZoomKeys.Action.CONSUME
         }
         return action != WheelZoomKeys.Action.PASS || super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * Lincoln/Ford cluster forwarding. Shown only on a head unit that has the cluster app (or the
+     * tested firmware), and off by default; it never competes with the BYD card on a BYD car.
+     */
+    private fun lincolnClusterSection(content: LinearLayout) {
+        if (!com.shilapi.xcertplay.lincoln.LincolnClusterSettings.available(this)) return
+        section(content, getString(R.string.settings_lincoln_cluster), R.drawable.ic_dp_navigation) { card ->
+            card.addView(label(getString(R.string.settings_lincoln_cluster_description), 15, MUTED))
+            toggle(card, getString(R.string.settings_lincoln_cluster_navigation),
+                getString(R.string.settings_lincoln_cluster_navigation_description),
+                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.navigation(this)) {
+                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.setNavigation(this, it)
+                if (it) com.shilapi.xcertplay.lincoln.LincolnClusterOutput.attach(applicationContext)
+            }
+            toggle(card, getString(R.string.settings_lincoln_cluster_music),
+                getString(R.string.settings_lincoln_cluster_music_description),
+                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.music(this)) {
+                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.setMusic(this, it)
+                if (it) com.shilapi.xcertplay.lincoln.LincolnClusterOutput.attach(applicationContext)
+            }
+            toggle(card, getString(R.string.settings_lincoln_cluster_remaining),
+                getString(R.string.settings_lincoln_cluster_remaining_description),
+                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.remaining(this)) {
+                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.setRemaining(this, it)
+            }
+            card.addView(label(getString(R.string.settings_lincoln_cluster_status,
+                com.shilapi.xcertplay.lincoln.LincolnClusterSettings.clusterPackage(this),
+                com.shilapi.xcertplay.lincoln.LincolnClusterOutput.statusLine()), 14, MUTED))
+        }
     }
 
     /** The 0.2.9 Dashboard song setting, shown once: in the BYD navigation card, or under Advanced vehicle data. */

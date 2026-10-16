@@ -967,4 +967,13 @@
     <string name="settings_write_settings_allow">Allow access</string>
     <string name="settings_wifi_direct_scan_pause">Pause the car\'s Wi-Fi search during CarPlay · needs ADB</string>
     <string name="settings_wifi_direct_scan_pause_description">Over Wi-Fi Direct the car searches for Wi-Fi networks every few seconds, and each search makes music and video stutter. With this on, DiPlay pauses the search while CarPlay runs. The car then also does not join a known network, such as your phone\'s hotspot, by itself until CarPlay ends; you can still join one in the car\'s Wi-Fi settings. Turn it off to let the car join automatically. Applies at the next connection.</string>
+    <string name="settings_lincoln_cluster">Lincoln/Ford cluster</string>
+    <string name="settings_lincoln_cluster_description">Forward CarPlay guidance and song text to the verified Lincoln/Ford instrument-cluster app. Off by default; remove the standalone bridge first and do not run the car\'s own navigation at the same time.</string>
+    <string name="settings_lincoln_cluster_navigation">Cluster navigation</string>
+    <string name="settings_lincoln_cluster_navigation_description">Send the next turn arrow, distance and road to the cluster app. Takes effect at once.</string>
+    <string name="settings_lincoln_cluster_music">Cluster song text</string>
+    <string name="settings_lincoln_cluster_music_description">Send the song title and play state (no per-line lyrics). Takes effect at once.</string>
+    <string name="settings_lincoln_cluster_remaining">Cluster remaining distance/time (experimental)</string>
+    <string name="settings_lincoln_cluster_remaining_description">Also send the total remaining distance and time. The tested cluster ignores unknown fields, so this is only useful once a probe confirms the field names your cluster accepts.</string>
+    <string name="settings_lincoln_cluster_status">Cluster app: %1$s\n%2$s</string>
 </resources>
