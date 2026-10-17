@@ -50,6 +50,7 @@ object AirPlayPersistence {
     private const val KEY_MEDIA_AUDIO_CHANNEL = "media_audio_channel"
     private const val KEY_NAVIGATION_AUDIO_CHANNEL = "navigation_audio_channel"
     private const val KEY_NAVIGATION_AUDIO_ATTENUATION = "navigation_audio_attenuation_db"
+    private const val KEY_NAVIGATION_DUCKING_MEDIA = "navigation_ducking_media"
     private const val KEY_NAVIGATION_STREAM_TYPE = "navigation_stream_type"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
     private const val KEY_WIRELESS_HOTSPOT_MODE = "wireless_hotspot_mode"
@@ -299,6 +300,17 @@ object AirPlayPersistence {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putInt(KEY_NAVIGATION_AUDIO_ATTENUATION,
                 com.shilapi.xcertplay.media.NavigationAudioGain.clamp(db))
+            .apply()
+    }
+
+    /** Opt-in: lower music while CarPlay navigation guidance is actually speaking. */
+    fun loadNavigationDuckingMedia(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_NAVIGATION_DUCKING_MEDIA, false)
+
+    fun saveNavigationDuckingMedia(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_NAVIGATION_DUCKING_MEDIA, enabled)
             .apply()
     }
 

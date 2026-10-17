@@ -34,25 +34,39 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 /** AudioTrack's attributes getter is only available from Android 10. */
 internal fun audioTrackAttributesForFocus(track: AudioTrack, configured: AudioAttributes): AudioAttributes =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) track.audioAttributes else configured
 
-/** Owns one focus request for all eligible tracks in a CarPlay sink. */
+/**
+ * Owns one focus request for all eligible tracks in a CarPlay sink, and the relative
+ * music gain used while navigation guidance is speaking.
+ */
 internal class AudioFocusCoordinator(
     context: Context?,
     private val enabled: Boolean,
     private val muteMediaOnTransientLoss: Boolean = true,
     private val report: (String) -> Unit = {},
 ) {
-    private data class Entry(val channel: AudioChannel, val attributes: AudioAttributes, var appliedVolume: Float = FULL_VOLUME)
+    private data class Entry(
+        val channel: AudioChannel,
+        val attributes: AudioAttributes,
+        val speech: Boolean,
+        var appliedVolume: Float? = FULL_VOLUME,
+    )
 
     private val manager = context?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private val active = LinkedHashMap<AudioTrack, Entry>()
     private var request: AudioFocusRequestCompat? = null
     private var requestedChannel: AudioChannel? = null
     private var mediaVolume = FULL_VOLUME
+    /** Multiplier applied on top of [mediaVolume]; only the navigation ducking changes it. */
+    private var navigationDuckGain = FULL_VOLUME
+    @Volatile private var navigationDuckingEnabled = false
+    private var lastNavigationAudioNs = 0L
+    private var lastDuckTickNs = 0L
     private var closed = false
     private var focusGeneration = 0L
     private var currentListener = listenerFor(focusGeneration)
@@ -91,15 +105,18 @@ internal class AudioFocusCoordinator(
 
     @Synchronized
     fun acquire(track: AudioTrack, channel: AudioChannel, attributes: AudioAttributes) {
-        if (closed || !enabled || manager == null || channel == AudioChannel.NAVIGATION) return
-        active[track] = Entry(channel, attributes)
-        refreshRequest()
-        applyMediaVolume(track, active.getValue(track))
+        if (closed || channel == AudioChannel.NAVIGATION) return
+        val entry = Entry(channel, attributes, attributes.contentType == AudioAttributes.CONTENT_TYPE_SPEECH)
+        active[track] = entry
+        if (enabled) refreshRequest()
+        // A track that opens mid-prompt must start at the ducked level, not jump down later.
+        if (navigationDuckGain != FULL_VOLUME) entry.appliedVolume = null
+        applyMediaVolume(track, entry)
     }
 
     @Synchronized
     fun release(track: AudioTrack) {
-        if (active.remove(track) != null) refreshRequest()
+        if (active.remove(track) != null && enabled) refreshRequest()
     }
 
     fun onExternalFocusChange(change: Int) {
@@ -112,7 +129,63 @@ internal class AudioFocusCoordinator(
         if (closed) return
         closed = true
         active.clear()
-        refreshRequest()
+        if (enabled) refreshRequest()
+    }
+
+    /**
+     * Turns the music-under-guidance ducking on or off. Turning it off restores music at once;
+     * the caller never has to reconnect CarPlay.
+     */
+    @Synchronized
+    fun setNavigationDuckingEnabled(enabled: Boolean) {
+        if (navigationDuckingEnabled == enabled) return
+        navigationDuckingEnabled = enabled
+        if (!enabled) {
+            lastNavigationAudioNs = 0L
+            navigationDuckGain = FULL_VOLUME
+            // Restore music even when Android focus is handled elsewhere (focus option off).
+            active.forEach { (track, entry) -> applyMediaVolume(track, entry, force = true) }
+        }
+    }
+
+    /** Called by the navigation renderer for each decoded PCM chunk that is not silence. */
+    fun navigationAudioDetected(nowNs: Long) {
+        if (!navigationDuckingEnabled) return
+        synchronized(this) {
+            if (closed) return
+            // Only extend the hold; many chunks arrive faster than the clock can be read.
+            if (nowNs > lastNavigationAudioNs) lastNavigationAudioNs = nowNs
+        }
+    }
+
+    /**
+     * Advances the ducking envelope. Called from the music renderer's worker every poll so the
+     * fade is independent of packet arrival and always ends when the hold expires.
+     */
+    @Synchronized
+    fun tickNavigationDucking(nowNs: Long) {
+        if (closed) return
+        // Several renderers tick; the ramp must follow real time, not the tick count.
+        val elapsedNs = if (lastDuckTickNs == 0L) 0L else (nowNs - lastDuckTickNs).coerceAtLeast(0L)
+        lastDuckTickNs = nowNs
+        val target = when {
+            !navigationDuckingEnabled -> FULL_VOLUME
+            lastNavigationAudioNs == 0L -> FULL_VOLUME
+            nowNs < lastNavigationAudioNs -> FULL_VOLUME // clock went backwards; never stick
+            nowNs - lastNavigationAudioNs <= NAVIGATION_HOLD_NS -> NAVIGATION_DUCK_VOLUME
+            else -> FULL_VOLUME
+        }
+        if (navigationDuckGain == target) return
+        // A short ramp keeps the change inaudible instead of clicking.
+        val delta = target - navigationDuckGain
+        val step = (NAVIGATION_RAMP_PER_SECOND * (elapsedNs / 1_000_000_000f))
+            .coerceIn(NAVIGATION_RAMP_MIN_STEP, NAVIGATION_RAMP_MAX_STEP)
+        navigationDuckGain = if (abs(delta) <= step) {
+            target
+        } else {
+            navigationDuckGain + if (delta > 0) step else -step
+        }
+        applyMediaVolume()
     }
 
     private fun refreshRequest() {
@@ -148,15 +221,25 @@ internal class AudioFocusCoordinator(
 
     private fun setMediaVolume(volume: Float) {
         mediaVolume = volume
+        applyMediaVolume()
+    }
+
+    private fun applyMediaVolume() {
         active.forEach { (track, entry) -> applyMediaVolume(track, entry) }
     }
 
-    private fun applyMediaVolume(track: AudioTrack, entry: Entry) {
+    private fun applyMediaVolume(track: AudioTrack, entry: Entry, force: Boolean = false) {
         // Telephony and assistant speech remain audible, and navigation never enters this map.
         // This changes only the renderer's relative gain, never Android's user stream volume.
-        if (entry.channel != AudioChannel.MEDIA || entry.appliedVolume == mediaVolume) return
-        val applied = runCatching { track.setStereoVolume(mediaVolume, mediaVolume) == AudioTrack.SUCCESS }.getOrDefault(false)
-        if (applied) entry.appliedVolume = mediaVolume
+        // A call played on the loudspeaker is mapped to MEDIA but is speech, so guidance must not
+        // duck it.
+        if (entry.channel != AudioChannel.MEDIA || entry.speech) return
+        // With focus off and ducking off nothing owns this track's relative volume.
+        if (!force && !enabled && !navigationDuckingEnabled) return
+        val volume = mediaVolume * navigationDuckGain
+        if (entry.appliedVolume == volume) return
+        val applied = runCatching { track.setStereoVolume(volume, volume) == AudioTrack.SUCCESS }.getOrDefault(false)
+        if (applied) entry.appliedVolume = volume
     }
 
     private fun AudioChannel.focusPriority(): Int = when (this) {
@@ -170,6 +253,14 @@ internal class AudioFocusCoordinator(
         const val TAG = "DiPlay-AudioFocus"
         const val FULL_VOLUME = 1f
         const val DUCKED_VOLUME = 0.2f
+        /** About -12 dB, the usual music level under a navigation prompt. */
+        const val NAVIGATION_DUCK_VOLUME = 0.25f
+        /** Full scale per second; 1.0 -> 0.25 takes 300 ms. */
+        const val NAVIGATION_RAMP_PER_SECOND = 2.5f
+        const val NAVIGATION_RAMP_MIN_STEP = 0.01f
+        const val NAVIGATION_RAMP_MAX_STEP = 0.25f
+        /** Covers the pauses between sentences without releasing between words. */
+        const val NAVIGATION_HOLD_NS = 900_000_000L
     }
 }
 
@@ -232,6 +323,8 @@ class AndroidMediaSink(
      * low-latency keys. On by default on that hardware; see [LincolnVehicleVideo].
      */
     private val lincolnFastVideo: Boolean = false,
+    /** Opt-in: duck music while CarPlay navigation guidance is speaking. Off by default. */
+    navigationDuckingEnabled: Boolean = false,
 ) : MediaSink {
     // Each downlink publishes its own reference; a mic must match that stream and sample rate.
     private val callEchoReferences = ConcurrentHashMap<AudioStreamId, EchoReference>()
@@ -271,11 +364,22 @@ class AndroidMediaSink(
     private val mediaAudioTypes = mutableSetOf<AudioStreamId>()
     private val audioRenderers = ConcurrentHashMap<AudioStreamId, AudioRenderer>()
     @Volatile private var navigationAttenuationDb = NavigationAudioGain.clamp(navigationAttenuationDb)
+    private val navigationDuckingEnabled = AtomicBoolean(navigationDuckingEnabled)
+
+    init {
+        audioFocusCoordinator.setNavigationDuckingEnabled(this.navigationDuckingEnabled.get())
+    }
 
     /** Apply a saved Audio setting to existing navigation tracks without reconnecting CarPlay. */
     fun setNavigationAttenuationDb(db: Int) {
         navigationAttenuationDb = NavigationAudioGain.clamp(db)
         audioRenderers.values.forEach { it.setNavigationAttenuationDb(navigationAttenuationDb) }
+    }
+
+    /** Apply a saved Audio setting to the running session without reconnecting CarPlay. */
+    fun setNavigationDuckingEnabled(enabled: Boolean) {
+        navigationDuckingEnabled.set(enabled)
+        audioFocusCoordinator.setNavigationDuckingEnabled(enabled)
     }
     private val microphoneUplinks = ConcurrentHashMap<AudioStreamId, MicrophoneUplink>()
     private val audioModeLock = Any()
@@ -1884,6 +1988,8 @@ private class AudioRenderer(
                 // Apply pending Settings changes on this worker, never on the UI thread.
                 // Also handles quiet navigation tracks with no incoming PCM.
                 applyNavigationAttenuation()
+                // The music renderer advances the duck envelope even between packets.
+                audioFocusCoordinator.tickNavigationDucking(System.nanoTime())
                 diagnosticStage = "packet"
                 queue.poll(AUDIO_POLL_MILLIS, TimeUnit.MILLISECONDS)?.let(::handle)
                 // Output becomes ready asynchronously, including after the last packet of a burst.
@@ -2392,6 +2498,12 @@ private class AudioRenderer(
     private fun writePcm(data: ByteArray, offset: Int = 0, length: Int = data.size) {
         val track = track ?: return
         diagnosticStage = "track-write"
+        // Guidance is a separate stream; its PCM tells us when it is actually speaking, which the
+        // per-second route guidance metadata cannot.
+        if (mappedChannel == AudioChannel.NAVIGATION && length > 0 &&
+            AmbientMusicEnvelope.pcmRms(data, offset, length) > NAVIGATION_SPEECH_RMS) {
+            audioFocusCoordinator.navigationAudioDetected(System.nanoTime())
+        }
         if (!firstPcmLogged && length > 0) {
             firstPcmLogged = true
             Log.i(
@@ -2664,6 +2776,7 @@ private class AudioRenderer(
         const val AUDIO_INPUT_WAIT_NS = 100_000_000L
         const val AUDIO_POLL_MILLIS = 10L
         const val NAVIGATION_GAIN_RETRY_NS = 500_000_000L
+        const val NAVIGATION_SPEECH_RMS = 1.0 / 512.0
         const val BUFFER_TAIL_WAIT_NS = 500_000_000L
         // Holds a burst after a Wi-Fi gap (~4 s of AAC) instead of dropping it.
         const val MAX_QUEUED_PACKETS = 192

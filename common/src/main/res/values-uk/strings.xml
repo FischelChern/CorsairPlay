@@ -870,6 +870,8 @@
     <string name="settings_navigation_attenuation">Гучність навігаційних підказок</string>
     <string name="settings_navigation_attenuation_value">%1$d дБ</string>
     <string name="settings_navigation_attenuation_description">Зменшує лише гучність навігаційних підказок CarPlay, не змінюючи музику та виклики. Застосовується одразу; регулювання навігації на пристрої лишається доступним.</string>
+    <string name="settings_navigation_ducking">Тихіша музика під час навігації</string>
+    <string name="settings_navigation_ducking_description">Приглушує музику CarPlay, поки лунає навігаційна підказка iPhone, а потім відновлює гучність. Виклики та Siri зберігають свою гучність. Застосовується одразу; типово вимкнено.</string>
     <string name="settings_car_hotspot_control">Точка доступу автомобіля</string>
     <string name="settings_auto_car_hotspot_system_description">Вмикає збережену точку доступу під час відкриття Lincoln і перед бездротовим підключенням. Потрібен доступ Android «Зміна системних налаштувань»; ADB не потрібен. Щоб точка доступу з’являлася й після повного перезапуску, увімкніть відкриття Lincoln після запуску автомобіля. Точка доступу автоматично не вимикається.</string>
     <string name="settings_write_settings_granted">Доступ «Зміна системних налаштувань»: дозволено</string>

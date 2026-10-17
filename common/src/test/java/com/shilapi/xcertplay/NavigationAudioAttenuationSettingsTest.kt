@@ -24,4 +24,16 @@ class NavigationAudioAttenuationSettingsTest {
         AirPlayPersistence.saveNavigationAudioAttenuationDb(context, 20)
         assertEquals(NavigationAudioGain.MAX_DB, AirPlayPersistence.loadNavigationAudioAttenuationDb(context))
     }
+
+    @Test fun musicDuckingIsOffByDefaultAndSurvivesABackupRoundTrip() {
+        context.getSharedPreferences("xcertplay_airplay", Context.MODE_PRIVATE).edit().clear().commit()
+        assertEquals(false, AirPlayPersistence.loadNavigationDuckingMedia(context))
+        AirPlayPersistence.saveNavigationDuckingMedia(context, true)
+        assertEquals(true, AirPlayPersistence.loadNavigationDuckingMedia(context))
+
+        val document = com.shilapi.xcertplay.backup.SettingsBackupCodec.export(context, "test")
+        context.getSharedPreferences("xcertplay_airplay", Context.MODE_PRIVATE).edit().clear().commit()
+        com.shilapi.xcertplay.backup.SettingsBackupCodec.import(context, document)
+        assertEquals(true, AirPlayPersistence.loadNavigationDuckingMedia(context))
+    }
 }

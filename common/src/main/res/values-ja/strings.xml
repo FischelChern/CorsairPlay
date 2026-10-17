@@ -960,6 +960,8 @@
     <string name="settings_navigation_attenuation">ナビ案内の音量</string>
     <string name="settings_navigation_attenuation_value">%1$d dB</string>
     <string name="settings_navigation_attenuation_description">CarPlayのナビ案内だけ音量を下げます。音楽や通話の音量は変わりません。変更はすぐに反映され、車載端末側のナビ音量も引き続き使用できます。</string>
+    <string name="settings_navigation_ducking">ナビ案内中は音楽を下げる</string>
+    <string name="settings_navigation_ducking_description">iPhoneのナビ案内中だけCarPlayの音楽を下げ、案内が終わると元に戻します。通話とSiriの音量は変わりません。すぐに反映され、初期設定はオフです。</string>
     <string name="settings_car_hotspot_control">車のホットスポット</string>
     <string name="settings_auto_car_hotspot_system_description">Lincoln を開いたときとワイヤレス接続の前に、保存済みの車のホットスポットをオンにします。Android の「システム設定の変更」へのアクセスが必要です。ADB は不要です。完全に再起動した後もホットスポットを使うには、車の起動後に Lincoln を開く設定もオンにしてください。ホットスポットは自動ではオフになりません。</string>
     <string name="settings_write_settings_granted">「システム設定の変更」へのアクセス: 許可済み</string>

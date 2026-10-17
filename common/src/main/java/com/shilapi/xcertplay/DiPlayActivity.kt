@@ -2095,6 +2095,12 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             card.addView(label(getString(R.string.settings_navigation_attenuation_description), 14, MUTED).apply {
                 setPadding(0, dp(SETTINGS_BLOCK_GAP_DP), 0, 0)
             })
+            toggle(card, getString(R.string.settings_navigation_ducking),
+                getString(R.string.settings_navigation_ducking_description),
+                AirPlayPersistence.loadNavigationDuckingMedia(this)) {
+                AirPlayPersistence.saveNavigationDuckingMedia(this, it)
+                CarPlayBackgroundSession.snapshot()?.sink?.setNavigationDuckingEnabled(it)
+            }
             musicBufferChoice(card, wireless = true)
             musicBufferChoice(card, wireless = false)
             toggle(card, getString(R.string.settings_call_speakerphone), getString(R.string.settings_call_speakerphone_description),

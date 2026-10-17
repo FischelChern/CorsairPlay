@@ -907,6 +907,8 @@
     <string name="settings_navigation_attenuation">مستوى صوت إرشادات الملاحة</string>
     <string name="settings_navigation_attenuation_value">%1$d ديسيبل</string>
     <string name="settings_navigation_attenuation_description">يخفض صوت إرشادات ملاحة CarPlay فقط دون تغيير صوت الموسيقى أو المكالمات. يُطبَّق التغيير فورًا وتظل وحدة السيارة تتحكم بمستوى صوت الملاحة.</string>
+    <string name="settings_navigation_ducking">خفض الموسيقى أثناء الملاحة</string>
+    <string name="settings_navigation_ducking_description">يخفض موسيقى CarPlay أثناء نطق إرشاد الملاحة من iPhone ثم يعيدها. تحتفظ المكالمات وSiri بمستوى صوتها. يُطبَّق فورًا وهو متوقف افتراضيًا.</string>
     <string name="settings_car_hotspot_control">نقطة اتصال السيارة</string>
     <string name="settings_auto_car_hotspot_system_description">يشغّل نقطة اتصال السيارة المحفوظة عند فتح Lincoln وقبل الاتصال اللاسلكي. يحتاج Lincoln إلى إذن Android «تعديل إعدادات النظام»؛ لا يلزم ADB. لتتوفر نقطة الاتصال بعد إعادة التشغيل الكاملة، فعّل أيضًا فتح Lincoln بعد تشغيل السيارة. لا يتم إيقاف نقطة الاتصال تلقائيًا.</string>
     <string name="settings_write_settings_granted">إذن «تعديل إعدادات النظام»: مسموح</string>
