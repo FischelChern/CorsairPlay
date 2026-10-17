@@ -40,6 +40,12 @@ internal object CarPlayMediaKeys {
     private const val TAG = "DiPlay-MediaKeys"
     private const val ACTIONS = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
         PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SKIP_TO_NEXT or PlaybackState.ACTION_SKIP_TO_PREVIOUS
+    /** How long after an interruption starts the head unit's own media index write is sampled. */
+    private const val INTERRUPTION_CAPTURE_MILLIS = 1200L
+    /** Ignore focus blips shorter than this; a real assistant turn lasts far longer. */
+    private const val ASSISTANT_PAUSE_DELAY_MILLIS = 150L
+    /** Let the head unit finish moving its output back before music resumes. */
+    private const val ASSISTANT_RESUME_DELAY_MILLIS = 350L
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val artworkQueue = NowPlayingArtworkQueue(
@@ -61,6 +67,25 @@ internal object CarPlayMediaKeys {
     private var focusOwner: Any? = null
     private var focusEventRevision = 0L
     private var focusHeld = false
+    /**
+     * STREAM_MUSIC index the user had before a car assistant (or any other app) took transient
+     * focus. The MEK/SYNC+ head unit rewrites the media index for its own assistant and keeps it,
+     * which makes CarPlay music jump and later volume keys start from the wrong place. The
+     * original value is restored once the interruption ends.
+     */
+    private var musicVolumeBeforeTransientLoss: Int? = null
+    /** What the head unit set while the interruption ran; used to tell it apart from a user edit. */
+    private var musicVolumeDuringInterruption: Int? = null
+    private var captureInterruptionVolume: Runnable? = null
+    /**
+     * The car's own assistant takes the primary output for its answer, and on this head unit the
+     * DSP/RR loop reads differently on the VR route: CarPlay music gets much louder and the media
+     * volume keys stop addressing it. PCM scaling cannot undo that because the amplification is
+     * downstream of us, so pause playback for the same reason a CarPlay dongle does, and resume
+     * only the playback this module paused.
+     */
+    private var pausedForAssistant: CarPlayController? = null
+    private var assistantPausePending: Runnable? = null
     private var appContext: Context? = null
     private var mediaAudioActive = false
     private var nowPlaying = CarPlayNowPlaying()
@@ -336,10 +361,155 @@ internal object CarPlayMediaKeys {
         if (!current) return
         Log.i(TAG, "audio focus change=$change")
         WheelKeyLog.note("media keys audio focus change=$change")
+        when (change) {
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                rememberMusicVolume()
+                pauseForAssistant(expectedController)
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                restoreMusicVolumeAfterTransientLoss()
+                // Only rebuild when this interruption actually paused music. Every focus request
+                // receives a GAIN on startup, and rebuilding unconditionally there costs an
+                // unnecessary track allocation and a short prebuffer.
+                if (resumeAfterAssistant(expectedController)) {
+                    CarPlayBackgroundSession.snapshot()?.takeIf { it.controller === expectedController }
+                        ?.sink?.rerouteMediaTracks()
+                }
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                clearMusicVolumeGuard()
+                resumeAfterAssistant(expectedController)
+            }
+        }
         // Resolve the matching sink and invoke it outside the media-key monitor. An abandoned
         // request must never mute a newer controller, and these owners must not nest locks.
         val background = CarPlayBackgroundSession.snapshot()
         if (background?.controller === expectedController) background.sink.onMediaAudioFocusChanged(change)
+    }
+
+    /**
+     * Records the music index only while CarPlay is actually playing music. Anything else (a paused
+     * session, the car's radio) must keep its own volume handling.
+     */
+    private fun rememberMusicVolume() {
+        val context = synchronized(this) {
+            if (musicVolumeBeforeTransientLoss != null) return
+            if (!mediaAudioActive && !focusHeld) return
+            appContext
+        } ?: return
+        val audio = context.getSystemService(AudioManager::class.java) ?: return
+        val current = runCatching { audio.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrNull() ?: return
+        val capture: Runnable
+        synchronized(this) {
+            if (musicVolumeBeforeTransientLoss == null) musicVolumeBeforeTransientLoss = current
+            musicVolumeDuringInterruption = null
+            capture = Runnable {
+                val now = runCatching { audio.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrNull()
+                synchronized(this) {
+                    if (musicVolumeBeforeTransientLoss != null) musicVolumeDuringInterruption = now
+                }
+                Log.i(TAG, "car assistant rewrote media volume to $now")
+            }
+            captureInterruptionVolume?.let(mainHandler::removeCallbacks)
+            captureInterruptionVolume = capture
+        }
+        // The head unit applies its own media index in the first moments of the interruption,
+        // before a user could press a key. Recording that value lets the restore tell it apart
+        // from a volume the user chose themselves while the assistant was speaking.
+        mainHandler.postDelayed(capture, INTERRUPTION_CAPTURE_MILLIS)
+    }
+
+    /**
+     * Pauses CarPlay music while the head unit's assistant has the output.
+     *
+     * The pause is only sent when CarPlay is actually playing, so waking the assistant over a
+     * paused or silent session does not start anything later. A short delay keeps a brief focus
+     * blip (the head unit requesting and releasing focus for a chime) from stopping the music.
+     */
+    private fun pauseForAssistant(expected: CarPlayController) {
+        val shouldPause = synchronized(this) {
+            if (controller !== expected) return
+            if (pausedForAssistant != null) return
+            val playing = mediaAudioActive || nowPlaying.playing
+            if (!playing) return
+            pausedForAssistant = expected
+            true
+        }
+        assistantPausePending?.let(mainHandler::removeCallbacks)
+        val action = Runnable {
+            synchronized(this) { assistantPausePending = null }
+            if (!expected.sendMediaButton(CarPlayMediaButton.PAUSE)) {
+                synchronized(this) { if (pausedForAssistant === expected) pausedForAssistant = null }
+                return@Runnable
+            }
+            WheelKeyLog.note("media keys paused CarPlay for the car assistant")
+        }
+        assistantPausePending = action
+        mainHandler.postDelayed(action, ASSISTANT_PAUSE_DELAY_MILLIS)
+    }
+
+    /** Resumes only the playback this module paused for an assistant interruption. */
+    private fun resumeAfterAssistant(expected: CarPlayController): Boolean {
+        val paused = synchronized(this) {
+            assistantPausePending?.let(mainHandler::removeCallbacks)
+            assistantPausePending = null
+            if (pausedForAssistant !== expected) return false
+            pausedForAssistant = null
+            true
+        }
+        mainHandler.postDelayed({
+            if (expected.sendMediaButton(CarPlayMediaButton.PLAY)) {
+                WheelKeyLog.note("media keys resumed CarPlay after the car assistant")
+            }
+        }, ASSISTANT_RESUME_DELAY_MILLIS)
+        return paused
+    }
+
+    /**
+     * The head unit applies its own media index while the assistant holds transient focus. Put the
+     * user's value back once focus returns, so the next volume key starts from the same place it
+     * would have without the interruption. A no-op when nothing changed.
+     */
+    private fun restoreMusicVolumeAfterTransientLoss() {
+        val (context, target, replaced) = synchronized(this) {
+            val target = musicVolumeBeforeTransientLoss
+            val replaced = musicVolumeDuringInterruption
+            musicVolumeBeforeTransientLoss = null
+            musicVolumeDuringInterruption = null
+            captureInterruptionVolume?.let(mainHandler::removeCallbacks)
+            captureInterruptionVolume = null
+            val currentContext = appContext
+            if (target == null || currentContext == null) return
+            Triple(currentContext, target, replaced)
+        } ?: return
+        val audio = context.getSystemService(AudioManager::class.java) ?: return
+        val max = runCatching { audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(0)
+        if (target !in 0..max) return
+        val current = runCatching { audio.getStreamVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(target)
+        if (current == target) return
+        // Only undo the head unit's own write. If the user turned the knob during the
+        // interruption the index no longer matches, and their choice stays.
+        if (replaced == null || current != replaced) {
+            Log.i(TAG, "media volume left at $current; it no longer matches the interruption")
+            return
+        }
+        val applied = runCatching {
+            audio.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+            audio.getStreamVolume(AudioManager.STREAM_MUSIC) == target
+        }.getOrDefault(false)
+        val line = "audio focus returned; media volume $current -> $target restored=$applied"
+        Log.i(TAG, line)
+        WheelKeyLog.note(line)
+    }
+
+    private fun clearMusicVolumeGuard() {
+        synchronized(this) {
+            musicVolumeBeforeTransientLoss = null
+            musicVolumeDuringInterruption = null
+            captureInterruptionVolume?.let(mainHandler::removeCallbacks)
+            captureInterruptionVolume = null
+        }
     }
 
     private fun releaseLocked() {
@@ -364,6 +534,10 @@ internal object CarPlayMediaKeys {
         focusRequest?.let { request -> appContext?.getSystemService(AudioManager::class.java)?.let(request::abandon) }
         focusRequest = null
         focusHeld = false
+        assistantPausePending?.let(mainHandler::removeCallbacks)
+        assistantPausePending = null
+        pausedForAssistant = null
+        clearMusicVolumeGuard()
     }
 
     private fun publishPlaybackStateLocked() {

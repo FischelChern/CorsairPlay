@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.media
 
 import android.media.AudioFormat as AndroidAudioFormat
+import android.content.Context
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
@@ -43,6 +44,8 @@ internal class MicrophoneUplink(
         )
     },
     private val noAudioRestartMillis: Long = NO_AUDIO_RESTART_MILLIS,
+    /** The app context, used to end the head unit's own leaked voice input when needed. */
+    private val context: Context? = null,
 ) : Closeable {
     private val running = AtomicBoolean(false)
     private val stats = MicrophoneCaptureStats(config, report = { message ->
@@ -150,6 +153,17 @@ internal class MicrophoneUplink(
                 }
             }
             nextRecorder.startRecording()
+            if (nextRecorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+                // A failed start means the head unit's assistant is normally holding its leaked
+                // hotword input. Release it immediately instead of delaying the first spoken word.
+                context?.let(CarVoiceInput::release)
+                if (!startWhenInputFree(nextRecorder)) {
+                    Log.w(TAG, "microphone input stayed busy audioType=${config.audioType}")
+                    stats.failure(MicrophoneFailureStage.RECORDING, code = nextRecorder.recordingState)
+                    release()
+                    return false
+                }
+            }
             stats.started(routeType(nextRecorder))
             thread = Thread({ capture(nextRecorder, nextSocket) }, "carplay-mic").apply {
                 isDaemon = true
@@ -383,6 +397,38 @@ internal class MicrophoneUplink(
         false
     }
 
+    /**
+     * Retries [AudioRecord.startRecording] until the head unit frees its capture input.
+     *
+     * Audio policy allows one input stream at a time here; the head unit's own assistant holds a
+     * voice-recognition input for the entire drive, so a CarPlay microphone request can lose the
+     * race even when the assistant is not speaking. The caller first asks the assistant to end its
+     * recording; this retry gives that asynchronous broadcast a moment to release the input.
+     * START_ERROR is immediate and gives no retry of its own, and reads on the failed recorder only
+     * ever return silence.
+     */
+    private fun startWhenInputFree(recorder: AudioRecord): Boolean {
+        val deadline = System.nanoTime() + INPUT_BUSY_TIMEOUT_NS
+        var attempts = 0
+        while (running.get() && System.nanoTime() < deadline) {
+            attempts++
+            runCatching { recorder.stop() }
+            runCatching { recorder.startRecording() }
+            if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                if (attempts > 1) {
+                    Log.i(TAG, "microphone input became free after $attempts attempts")
+                }
+                return true
+            }
+            try {
+                Thread.sleep(INPUT_BUSY_RETRY_MILLIS)
+            } catch (_: InterruptedException) {
+                return false
+            }
+        }
+        return false
+    }
+
     private fun sendFrame(socket: DatagramSocket, counters: MicrophoneCounters, frame: ByteArray) {
         val bodies = if (config.codec == AudioCodecKind.OPUS) {
             opusEncoder?.encode(frame).orEmpty()
@@ -515,6 +561,9 @@ internal class MicrophoneUplink(
         const val NO_AUDIO_RESTART_MILLIS = 1_000L
         const val MAX_NO_AUDIO_RESTARTS = 3
         const val EMPTY_READ_PAUSE_MILLIS = 5L
+        /** How long to wait for the head unit's assistant to close its capture input. */
+        const val INPUT_BUSY_TIMEOUT_NS = 1_200_000_000L
+        const val INPUT_BUSY_RETRY_MILLIS = 60L
     }
 }
 

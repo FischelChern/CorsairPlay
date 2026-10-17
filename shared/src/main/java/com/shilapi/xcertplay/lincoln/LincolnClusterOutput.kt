@@ -74,6 +74,21 @@ object LincolnClusterOutput {
     private const val END_SETTLE_NS = 2_500_000_000L
     @Volatile private var ticker: HandlerThread? = null
     @Volatile private var tickHandler: Handler? = null
+    /**
+     * The cluster drops everything it was told when the car's audio source changes, which the
+     * audio-off key does (`AudioSource have changed, clear TP filter String`). Forget what was sent
+     * so the next tick puts the cards back instead of assuming they are still there.
+     */
+    private val audioOffListener: (Boolean) -> Unit = {
+        synchronized(lock) {
+            // The tick skips an unchanged snapshot, so force the next one to rewrite the cards.
+            lastSnapshot = null
+            lastMusicKey = null
+            lastNavKey = null
+            lastRemainKey = null
+            lastNavSentNs = 0L
+        }
+    }
     private val tick = object : Runnable {
         override fun run() {
             if (context == null) return
@@ -90,6 +105,8 @@ object LincolnClusterOutput {
         val next: (CarPlayGlance.Snapshot) -> Unit = { onSnapshot(it) }
         listener = next
         CarPlayGlance.addListener(next)
+        com.shilapi.xcertplay.media.CarAudioOff.attach(app)
+        com.shilapi.xcertplay.media.CarAudioOff.addListener(audioOffListener)
         startTicking()
         // A session may already be running when the setting is enabled.
         onSnapshot(CarPlayGlance.snapshot())
@@ -98,6 +115,7 @@ object LincolnClusterOutput {
     fun detach() {
         listener?.let { CarPlayGlance.removeListener(it) }
         listener = null
+        com.shilapi.xcertplay.media.CarAudioOff.removeListener(audioOffListener)
         context = null
         stopTicking()
         synchronized(lock) {

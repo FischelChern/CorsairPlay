@@ -96,6 +96,48 @@ class AudioFocusAutoYieldTest {
         assertTrue(volumes(second).isEmpty())
     }
 
+    /**
+     * The head unit's assistant moves the primary output to its voice route, where the same
+     * samples are much louder. The media-key session forwards the focus change even when this
+     * sink requests no focus of its own, so the samples must be scaled down and later restored.
+     */
+    @Test fun forwardedTransientLossDucksSamplesWithoutAnOwnFocusRequest() {
+        var now = 1_000_000_000L
+        val coordinator = coordinator(enabled = false)
+        coordinator.nanoTime = { now }
+        val media = track()
+        coordinator.acquire(media, AudioChannel.MEDIA, attributes)
+        assertEquals(1f, coordinator.musicPcmGain, 0.0001f)
+
+        coordinator.onExternalFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        repeat(5) { now += 40_000_000L; coordinator.tickNavigationDucking() }
+        assertTrue(coordinator.musicPcmGain < 0.2f)
+
+        coordinator.onExternalFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+        repeat(40) { now += 40_000_000L; coordinator.tickNavigationDucking() }
+        assertEquals(1f, coordinator.musicPcmGain, 0.0001f)
+    }
+
+    @Test fun aMissingGainCallbackDoesNotLeaveMusicDucked() {
+        var now = 1_000_000_000L
+        val coordinator = coordinator(enabled = false)
+        coordinator.nanoTime = { now }
+        coordinator.acquire(track(), AudioChannel.MEDIA, attributes)
+        coordinator.onExternalFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        repeat(5) { now += 40_000_000L; coordinator.tickNavigationDucking() }
+        assertTrue(coordinator.musicPcmGain < 0.2f)
+
+        // A long spoken answer still holds the duck; only a genuinely missing callback expires.
+        now += 20_000_000_000L
+        coordinator.tickNavigationDucking()
+        assertTrue(coordinator.musicPcmGain < 0.2f)
+
+        now += 11_000_000_000L
+        coordinator.tickNavigationDucking()
+        repeat(70) { now += 40_000_000L; coordinator.tickNavigationDucking() }
+        assertEquals(1f, coordinator.musicPcmGain, 0.0001f)
+    }
+
     @Test fun lastTrackReleaseClearsLossAndRejectsOldRequestCallbacks() {
         val coordinator = coordinator()
         val first = track(); val second = track()

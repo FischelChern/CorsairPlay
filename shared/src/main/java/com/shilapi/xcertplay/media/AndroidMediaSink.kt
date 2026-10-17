@@ -75,6 +75,21 @@ internal class AudioFocusCoordinator(
         private set
     private val navigationDuckTarget: Float
         get() = NavigationDuckSettings.linear(navigationDuckDb)
+    /**
+     * Gain applied while another app (the head unit's own voice assistant) holds transient focus.
+     * The MEK/SYNC+ audio policy moves the primary output from its USB source to its VR source for
+     * the assistant, and that source has a much higher fixed level. The media index does not
+     * change, so the same samples become louder and the volume keys no longer address them.
+     * Scaling our own samples keeps CarPlay music near the level it had before the switch.
+     */
+    @Volatile private var interruptionGain = FULL_VOLUME
+    /** True while the head unit's own assistant is producing speech. */
+    @Volatile private var assistantSpeaking = false
+    private var interruptionTarget = FULL_VOLUME
+    private var interruptionRampFrom = FULL_VOLUME
+    private var interruptionRampStartNs = 0L
+    private var interruptionRampMs = 0
+    private var interruptionSafetyNs = 0L
     private var lastNavigationAudioNs = 0L
     private var reportedNavigationSpeech = false
     /** Where the current fade started and when, so each ramp lasts exactly its configured time. */
@@ -92,7 +107,15 @@ internal class AudioFocusCoordinator(
      * The gain the music renderer applies to its own PCM. The HAL may ignore the AudioTrack
      * volume, so the samples are scaled as well; reading it is lock-free on the audio thread.
      */
-    internal val musicPcmGain: Float get() = navigationDuckGain
+    internal val musicPcmGain: Float
+        get() {
+            // The car assistant's own playback is the only reliable bound on the window where its
+            // audio policy has moved the primary output to the louder VR source. While it speaks,
+            // CarPlay music is silenced outright (a dongle pauses instead); the stream keeps
+            // flowing, so playback continues the moment the assistant stops.
+            if (assistantSpeaking) return 0f
+            return if (navigationDuckGain < interruptionGain) navigationDuckGain else interruptionGain
+        }
 
     private fun listenerFor(generation: Long) = AudioManager.OnAudioFocusChangeListener { change ->
         synchronized(this) {
@@ -110,17 +133,25 @@ internal class AudioFocusCoordinator(
             }
             runCatching { report("Audio: focus change=$change activeTracks=${active.size}") }
             when (change) {
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> setMediaVolume(DUCKED_VOLUME)
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    setMediaVolume(DUCKED_VOLUME)
+                    beginInterruptionDuck()
+                }
                 AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                     if (muteMediaOnTransientLoss) {
                         // This reports a temporary Android focus owner, not a confirmed call.
                         Log.i(TAG, "Audio: muting media during transient focus loss")
                         setMediaVolume(0f)
+                        beginInterruptionDuck()
                     }
                 }
-                AudioManager.AUDIOFOCUS_GAIN -> setMediaVolume(FULL_VOLUME)
+                AudioManager.AUDIOFOCUS_GAIN -> {
+                    setMediaVolume(FULL_VOLUME)
+                    endInterruptionDuck()
+                }
                 // Keep CarPlay audio running on permanent loss. Some head units
                 // do not send a later gain callback after taking focus back.
+                AudioManager.AUDIOFOCUS_LOSS -> endInterruptionDuck()
             }
         }
     }
@@ -142,8 +173,82 @@ internal class AudioFocusCoordinator(
     }
 
     fun onExternalFocusChange(change: Int) {
-        val current = synchronized(this) { currentListener }
-        current.onAudioFocusChange(change)
+        // This path is forwarded by the media-key session, which owns a focus request even when
+        // this sink does not. It must not go through the listener's own-request guard: with the
+        // Audio settings focus option off there is no request here, and dropping the callback is
+        // exactly why the assistant's route switch went unnoticed.
+        synchronized(this) {
+            if (closed) return
+            when (change) {
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                    if (muteMediaOnTransientLoss) beginInterruptionDuck()
+                }
+                AudioManager.AUDIOFOCUS_GAIN -> endInterruptionDuck()
+            }
+            // When this sink does own the request, the listener still owns the per-track levels
+            // and the dropped-callback diagnostics. Run it too; its route-duck calls are no-ops
+            // because the envelope is already armed above.
+            if (request != null) currentListener.onAudioFocusChange(change)
+        }
+    }
+
+    /**
+     * The head unit's assistant is audible right now. Its audio policy has moved the primary
+     * output to the voice source, where our samples are much louder, so silence music for exactly
+     * that window. Unlike the focus callbacks this tracks the actual speech, which outlasts them.
+     */
+    fun setAssistantSpeaking(speaking: Boolean) {
+        assistantSpeaking = speaking
+    }
+
+    /** The head unit is handing the output to its assistant's voice route. */
+    private fun beginInterruptionDuck() {
+        val nowNs = nanoTime()
+        // A repeated loss while already ducked must not restart the ramp or extend forever.
+        if (interruptionTarget == ASSISTANT_DUCK_VOLUME) {
+            interruptionSafetyNs = nowNs + INTERRUPTION_SAFETY_NS
+            return
+        }
+        interruptionRampFrom = interruptionGain
+        interruptionRampStartNs = nowNs
+        interruptionRampMs = ASSISTANT_DUCK_DOWN_MS
+        interruptionTarget = ASSISTANT_DUCK_VOLUME
+        interruptionSafetyNs = nowNs + INTERRUPTION_SAFETY_NS
+        runCatching { report("Audio: voice route busy; ducking music samples") }
+    }
+
+    /** The assistant released the voice route; fade back to the level the user had. */
+    private fun endInterruptionDuck() {
+        if (interruptionTarget == FULL_VOLUME) return
+        interruptionRampFrom = interruptionGain
+        interruptionRampStartNs = nanoTime()
+        interruptionRampMs = ASSISTANT_DUCK_UP_MS
+        interruptionTarget = FULL_VOLUME
+        interruptionSafetyNs = 0L
+        runCatching { report("Audio: voice route released; restoring music samples") }
+    }
+
+    /** Advances the assistant fade independently of packet arrival. */
+    private fun tickInterruptionDucking(nowNs: Long) {
+        if (interruptionSafetyNs != 0L && nowNs >= interruptionSafetyNs) {
+            // A head unit that never sends GAIN must not leave music permanently quiet.
+            interruptionSafetyNs = 0L
+            if (interruptionTarget != FULL_VOLUME) {
+                interruptionRampFrom = interruptionGain
+                interruptionRampStartNs = nowNs
+                interruptionRampMs = INTERRUPTION_TIMEOUT_UP_MS
+                interruptionTarget = FULL_VOLUME
+                runCatching { report("Audio: voice route restore timed out; music restored") }
+            }
+        }
+        if (interruptionGain == interruptionTarget) return
+        val rampNs = interruptionRampMs * 1_000_000L
+        val progress = if (rampNs <= 0L) 1f else
+            ((nowNs - interruptionRampStartNs).toFloat() / rampNs).coerceIn(0f, 1f)
+        interruptionGain = interruptionRampFrom +
+            (interruptionTarget - interruptionRampFrom) * progress
+        if (progress >= 1f) interruptionGain = interruptionTarget
     }
 
     @Synchronized
@@ -205,6 +310,7 @@ internal class AudioFocusCoordinator(
     fun tickNavigationDucking() {
         if (closed) return
         val nowNs = nanoTime()
+        tickInterruptionDucking(nowNs)
         val target = when {
             !navigationDuckingEnabled -> FULL_VOLUME
             lastNavigationAudioNs == 0L -> FULL_VOLUME
@@ -300,6 +406,21 @@ internal class AudioFocusCoordinator(
         const val TAG = "DiPlay-AudioFocus"
         const val FULL_VOLUME = 1f
         const val DUCKED_VOLUME = 0.2f
+        /**
+         * The assistant route in this head unit is close to the navigation prompt level, so a
+         * hand-off at full music level sounds like a sudden jump. -18 dB keeps the music present
+         * but clearly behind the assistant.
+         */
+        const val ASSISTANT_DUCK_VOLUME = 0.125f
+        const val ASSISTANT_DUCK_DOWN_MS = 120
+        const val ASSISTANT_DUCK_UP_MS = 700
+        /**
+         * A lost GAIN callback must not leave music quiet forever, but a normal assistant turn
+         * (wake word, request, spoken answer) can easily run past ten seconds. Stay ducked long
+         * enough for those and only then fade back, slowly, if the callback never arrives.
+         */
+        const val INTERRUPTION_SAFETY_NS = 25_000_000_000L
+        const val INTERRUPTION_TIMEOUT_UP_MS = 2_500
     }
 }
 
@@ -381,10 +502,34 @@ class AndroidMediaSink(
         audioFocusAutoYield,
         onAudioDiagnostic,
     )
+    /**
+     * The car's "audio off" key only mutes STREAM_MUSIC, and this head unit's HAL ignores that, so
+     * media and guidance PCM is scaled to silence here instead. Calls stay audible.
+     */
+    @Volatile private var audioOffMuted = CarAudioOff.muted
+    private val audioOffListener: (Boolean) -> Unit = { off ->
+        audioOffMuted = off
+        audioRenderers.values.forEach { it.setAudioOffMuted(off) }
+    }
+
+    /**
+     * The head unit's assistant is audible, so the primary output is on its voice source. Music is
+     * silenced for exactly that window instead of relying on a focus callback that the unit sends
+     * for only a fraction of the answer. Attached in [init] after all renderer state exists.
+     */
+    private val assistantMonitor: AssistantPlaybackMonitor?
 
     /** The media-key session may own Android's current focus request for this same sink. */
     fun onMediaAudioFocusChanged(change: Int) {
         audioFocusCoordinator.onExternalFocusChange(change)
+    }
+
+    /**
+     * Rebuild the media tracks so audio policy re-resolves their route. Called after the car's
+     * assistant releases the output, and when focus returns if its playback callback was missed.
+     */
+    fun rerouteMediaTracks() {
+        audioRenderers.forEach { (_, renderer) -> renderer.requestReroute() }
     }
 
     private val screenStateLock = Any()
@@ -419,6 +564,25 @@ class AndroidMediaSink(
         audioFocusCoordinator.setNavigationDuckTuning(
             navigationDuckDb, navigationDuckDownMs, navigationDuckUpMs, navigationDuckHoldMs,
         )
+        appContext?.let(CarAudioOff::attach)
+        // Attaching can discover that the car is already muted, which the listener below must not
+        // have to replay for this sink.
+        audioOffMuted = CarAudioOff.muted
+        audioRenderers.values.forEach { it.setAudioOffMuted(audioOffMuted) }
+        CarAudioOff.addListener(audioOffListener)
+        assistantMonitor = appContext?.let { context ->
+            AssistantPlaybackMonitor(context) { speaking ->
+                audioFocusCoordinator.setAssistantSpeaking(speaking)
+                val line = if (speaking) "Audio: car assistant speaking; music muted"
+                    else "Audio: car assistant finished; music restored"
+                runCatching { onAudioDiagnostic(line) }
+                if (!speaking) {
+                    // Hand the route back: rebuilding the media track makes audio policy re-resolve
+                    // it, which is the same effect as opening and closing Siri.
+                    audioRenderers.forEach { (_, renderer) -> renderer.requestReroute() }
+                }
+            }.also { it.attach() }
+        }
     }
 
     /** Apply a saved Audio setting to existing navigation tracks without reconnecting CarPlay. */
@@ -721,7 +885,8 @@ class AndroidMediaSink(
             val uplink = microphoneUplinks.computeIfAbsent(id) {
                 MicrophoneUplink(config, onAudioDiagnostic,
                     speakerphoneCall = speakerphoneCall,
-                    echoReference = if (config.audioType == TELEPHONY_AUDIO_TYPE) callEchoReferences[id] else null)
+                    echoReference = if (config.audioType == TELEPHONY_AUDIO_TYPE) callEchoReferences[id] else null,
+                    context = appContext)
             }
             if (!uplink.start()) {
                 microphoneUplinks.remove(id, uplink)
@@ -827,6 +992,8 @@ class AndroidMediaSink(
         recoveryExecutor.shutdownNow()
         // Audio workers close asynchronously; none may reacquire focus after their sink closes.
         audioFocusCoordinator.close()
+        CarAudioOff.removeListener(audioOffListener)
+        assistantMonitor?.detach()
         audioRenderers.values.forEach(AudioRenderer::close)
         audioRenderers.clear()
         callEchoReferences.clear()
@@ -910,6 +1077,7 @@ class AndroidMediaSink(
             audioRenderers[id] = it
             // Cover a Settings change made while this renderer was being prepared.
             it.setNavigationAttenuationDb(navigationAttenuationDb)
+            it.setAudioOffMuted(audioOffMuted)
         }
     }
 
@@ -1939,6 +2107,8 @@ private class AudioRenderer(
     private var actualLegacyStreamType: Int? = null
     private val queue = LinkedBlockingQueue<AudioPacket>(MAX_QUEUED_PACKETS)
     @Volatile private var running = true
+    /** The car's audio-off key; telephony keeps playing so a call is never cut. */
+    @Volatile private var audioOffMuted = false
     @Volatile private var started = false
     private var codec: MediaCodec? = null
     private var track: AudioTrack? = null
@@ -1963,6 +2133,13 @@ private class AudioRenderer(
     private var outputBuffers = 0
     private var firstPcmLogged = false
     @Volatile private var lastDuckingPercent = -1
+    /**
+     * Set when the car's assistant released the output. The head unit's audio policy can keep the
+     * primary output on its louder voice source after the assistant stops, and only a new audio
+     * track makes it re-evaluate the route (the same thing toggling Siri does). The worker rebuilds
+     * the track between writes, never from the callback, so a blocking write is not disturbed.
+     */
+    @Volatile private var rerouteRequested = false
     private val packetsReceived = AtomicInteger()
     private val packetsDropped = AtomicInteger()
     private val lastArrivalNs = AtomicLong()
@@ -2025,6 +2202,20 @@ private class AudioRenderer(
         }
     }
 
+    /**
+     * Silence or resume this renderer for the car's audio-off key. Calls are never silenced: the
+     * car's own implementation leaves STREAM_VOICE_CALL alone, so a ringing or ongoing call stays
+     * audible.
+     */
+    fun setAudioOffMuted(muted: Boolean) {
+        audioOffMuted = muted && format.audioType != "telephony"
+    }
+
+    /** Ask the worker to rebuild the media track so audio policy re-resolves its route. */
+    fun requestReroute() {
+        if (mappedChannel == null || mappedChannel == AudioChannel.MEDIA) rerouteRequested = true
+    }
+
     override fun close() {
         AmbientMusicController.closeRenderer(ambientRendererToken)
         running = false
@@ -2048,6 +2239,9 @@ private class AudioRenderer(
             diagnosticStage = "focus"
             requestAudioFocus()
             while (running) {
+                // The assistant handed the output back; rebuild the media track so audio policy
+                // re-resolves the route instead of leaving us on its louder voice source.
+                if (rerouteRequested) rerouteTrack()
                 // Apply pending Settings changes on this worker, never on the UI thread.
                 // Also handles quiet navigation tracks with no incoming PCM.
                 applyNavigationAttenuation()
@@ -2192,7 +2386,7 @@ private class AudioRenderer(
             }
         }
         applyNavigationAttenuation()
-        if (ambientMedia) {
+        if (ambientMedia && ambientRendererToken == 0L) {
             ambientRendererToken = AmbientMusicController.openRenderer(ambientSinkToken, ambientEnvelope) {
                 built.playbackHeadPosition to (running && built.playState == AudioTrack.PLAYSTATE_PLAYING)
             }
@@ -2242,6 +2436,37 @@ private class AudioRenderer(
         AudioChannel.MEDIA -> mediaChannel
         AudioChannel.NAVIGATION -> navigationChannel
         else -> 0
+    }
+
+    /**
+     * Worker-thread only. Replaces the media track with a fresh one so Android's audio policy
+     * resolves the output route again. The MEK/SYNC+ unit keeps a track on its assistant's voice
+     * source after the assistant ends, where the same samples play far louder; building a new
+     * track is what makes it re-evaluate, and is why toggling Siri restores the normal level.
+     *
+     * Only music is rebuilt. The codec keeps running, so this costs a track allocation and the
+     * prebuffer, not a decoder restart or a CarPlay reconnect.
+     */
+    private fun rerouteTrack() {
+        rerouteRequested = false
+        if (mappedChannel != AudioChannel.MEDIA) return
+        val old = track ?: return
+        routingListener?.let { listener -> runCatching { old.removeOnRoutingChangedListener(listener) } }
+        routingListener = null
+        runCatching { old.pause() }
+        runCatching { old.flush() }
+        runCatching { old.release() }
+        track = null
+        playbackStarted = false
+        prebufferBytes = 0
+        fadeApplied = false
+        clockTrim = null
+        lastPlaybackHeadFrames = null
+        createTrack()
+        val rebuilt = track
+        runCatching {
+            report("Audio: media track rebuilt to restore the output route rebuilt=${rebuilt != null}")
+        }
     }
 
     fun setNavigationAttenuationDb(db: Int) {
@@ -2579,6 +2804,10 @@ private class AudioRenderer(
             applyFadeIn(data, offset, length)
             fadeApplied = true
         }
+        // The car's audio-off key: silence the samples ourselves because this head unit's HAL
+        // ignores the STREAM_MUSIC mute the key sets. After the fade-in, so the ramp cannot put
+        // sound back. Calls were excluded when the flag was set.
+        if (audioOffMuted) PcmGain.scaleS16(data, offset, length, 0f)
         var written = 0
         while (written < length && running) {
             // Long-running PCM writes may span several slider adjustments.

@@ -19,6 +19,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.util.ReflectionHelpers
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [25, 28, 33], manifest = Config.NONE)
@@ -139,6 +140,47 @@ class CarPlayMediaFocusForwardingTest {
         CarPlayMediaKeys.detach(controller)
         shadowOf(Looper.getMainLooper()).idle()
         verify(sink, never()).onMediaAudioFocusChanged(AudioManager.AUDIOFOCUS_GAIN)
+    }
+
+    @Test fun headUnitVolumeWriteDuringAssistantInterruptionIsUndone() {
+        val controller = mock(CarPlayController::class.java).also(controllers::add)
+        val sink = spy(AndroidMediaSink()).also(sinks::add)
+        val listener = start(controller, sink)
+        val audio = app.getSystemService(AudioManager::class.java)
+        audio.setStreamVolume(AudioManager.STREAM_MUSIC, 12, 0)
+        listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        // The MEK/SYNC+ head unit lowers the media index while its own assistant speaks.
+        audio.setStreamVolume(AudioManager.STREAM_MUSIC, 5, 0)
+        shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS)
+        listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+        assertEquals(12, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+    }
+
+    @Test fun userVolumeChoiceDuringInterruptionIsKept() {
+        val controller = mock(CarPlayController::class.java).also(controllers::add)
+        val sink = spy(AndroidMediaSink()).also(sinks::add)
+        val listener = start(controller, sink)
+        val audio = app.getSystemService(AudioManager::class.java)
+        audio.setStreamVolume(AudioManager.STREAM_MUSIC, 12, 0)
+        listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        audio.setStreamVolume(AudioManager.STREAM_MUSIC, 5, 0)
+        shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS)
+        // The user turns the knob while the assistant is still speaking.
+        audio.setStreamVolume(AudioManager.STREAM_MUSIC, 9, 0)
+        listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+        assertEquals(9, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
+    }
+
+    @Test fun untouchedVolumeIsLeftAloneAfterInterruption() {
+        val controller = mock(CarPlayController::class.java).also(controllers::add)
+        val sink = spy(AndroidMediaSink()).also(sinks::add)
+        val listener = start(controller, sink)
+        val audio = app.getSystemService(AudioManager::class.java)
+        audio.setStreamVolume(AudioManager.STREAM_MUSIC, 7, 0)
+        listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        shadowOf(Looper.getMainLooper()).idleFor(1200, TimeUnit.MILLISECONDS)
+        listener.onAudioFocusChange(AudioManager.AUDIOFOCUS_GAIN)
+        assertEquals(7, audio.getStreamVolume(AudioManager.STREAM_MUSIC))
     }
 
     private fun start(controller: CarPlayController, sink: AndroidMediaSink,
