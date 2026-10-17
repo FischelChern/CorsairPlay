@@ -63,14 +63,23 @@ internal class AudioFocusCoordinator(
     private var requestedChannel: AudioChannel? = null
     private var mediaVolume = FULL_VOLUME
     /** Multiplier applied on top of [mediaVolume]; only the navigation ducking changes it. */
-    private var navigationDuckGain = FULL_VOLUME
+    @Volatile private var navigationDuckGain = FULL_VOLUME
     @Volatile private var navigationDuckingEnabled = false
     private var lastNavigationAudioNs = 0L
     private var lastDuckTickNs = 0L
+    private var reportedNavigationSpeech = false
+    /** Single monotonic time source for the duck envelope; tests replace it. */
+    internal var nanoTime: () -> Long = System::nanoTime
     private var closed = false
     private var focusGeneration = 0L
     private var currentListener = listenerFor(focusGeneration)
     internal val listener: AudioManager.OnAudioFocusChangeListener get() = currentListener
+
+    /**
+     * The gain the music renderer applies to its own PCM. The HAL may ignore the AudioTrack
+     * volume, so the samples are scaled as well; reading it is lock-free on the audio thread.
+     */
+    internal val musicPcmGain: Float get() = navigationDuckGain
 
     private fun listenerFor(generation: Long) = AudioManager.OnAudioFocusChangeListener { change ->
         synchronized(this) {
@@ -149,10 +158,15 @@ internal class AudioFocusCoordinator(
     }
 
     /** Called by the navigation renderer for each decoded PCM chunk that is not silence. */
-    fun navigationAudioDetected(nowNs: Long) {
+    fun navigationAudioDetected() {
         if (!navigationDuckingEnabled) return
         synchronized(this) {
             if (closed) return
+            if (!reportedNavigationSpeech) {
+                reportedNavigationSpeech = true
+                runCatching { report("Audio: navigation speech detected; ducking music") }
+            }
+            val nowNs = nanoTime()
             // Only extend the hold; many chunks arrive faster than the clock can be read.
             if (nowNs > lastNavigationAudioNs) lastNavigationAudioNs = nowNs
         }
@@ -163,8 +177,9 @@ internal class AudioFocusCoordinator(
      * fade is independent of packet arrival and always ends when the hold expires.
      */
     @Synchronized
-    fun tickNavigationDucking(nowNs: Long) {
+    fun tickNavigationDucking() {
         if (closed) return
+        val nowNs = nanoTime()
         // Several renderers tick; the ramp must follow real time, not the tick count.
         val elapsedNs = if (lastDuckTickNs == 0L) 0L else (nowNs - lastDuckTickNs).coerceAtLeast(0L)
         lastDuckTickNs = nowNs
@@ -186,6 +201,9 @@ internal class AudioFocusCoordinator(
             navigationDuckGain + if (delta > 0) step else -step
         }
         applyMediaVolume()
+        if (navigationDuckGain <= NAVIGATION_DUCK_VOLUME + 0.001f || navigationDuckGain >= FULL_VOLUME - 0.001f) {
+            runCatching { report("Audio: navigation ducking gain=${(navigationDuckGain * 100).toInt()}%") }
+        }
     }
 
     private fun refreshRequest() {
@@ -236,7 +254,10 @@ internal class AudioFocusCoordinator(
         if (entry.channel != AudioChannel.MEDIA || entry.speech) return
         // With focus off and ducking off nothing owns this track's relative volume.
         if (!force && !enabled && !navigationDuckingEnabled) return
-        val volume = mediaVolume * navigationDuckGain
+        // Navigation ducking is applied to the samples, never here: multiplying both would square
+        // it (-24 dB) on a head unit that does honour setStereoVolume, while the sample scaling is
+        // the one that works everywhere.
+        val volume = mediaVolume
         if (entry.appliedVolume == volume) return
         val applied = runCatching { track.setStereoVolume(volume, volume) == AudioTrack.SUCCESS }.getOrDefault(false)
         if (applied) entry.appliedVolume = volume
@@ -1900,6 +1921,7 @@ private class AudioRenderer(
     private var decoderUnavailablePackets = 0
     private var outputBuffers = 0
     private var firstPcmLogged = false
+    @Volatile private var lastDuckingPercent = -1
     private val packetsReceived = AtomicInteger()
     private val packetsDropped = AtomicInteger()
     private val lastArrivalNs = AtomicLong()
@@ -1989,7 +2011,7 @@ private class AudioRenderer(
                 // Also handles quiet navigation tracks with no incoming PCM.
                 applyNavigationAttenuation()
                 // The music renderer advances the duck envelope even between packets.
-                audioFocusCoordinator.tickNavigationDucking(System.nanoTime())
+                audioFocusCoordinator.tickNavigationDucking()
                 diagnosticStage = "packet"
                 queue.poll(AUDIO_POLL_MILLIS, TimeUnit.MILLISECONDS)?.let(::handle)
                 // Output becomes ready asynchronously, including after the last packet of a burst.
@@ -2502,7 +2524,7 @@ private class AudioRenderer(
         // per-second route guidance metadata cannot.
         if (mappedChannel == AudioChannel.NAVIGATION && length > 0 &&
             AmbientMusicEnvelope.pcmRms(data, offset, length) > NAVIGATION_SPEECH_RMS) {
-            audioFocusCoordinator.navigationAudioDetected(System.nanoTime())
+            audioFocusCoordinator.navigationAudioDetected()
         }
         if (!firstPcmLogged && length > 0) {
             firstPcmLogged = true
@@ -2520,6 +2542,21 @@ private class AudioRenderer(
         while (written < length && running) {
             // Long-running PCM writes may span several slider adjustments.
             applyNavigationAttenuation()
+            // Scale the music samples themselves: several head-unit HALs ignore AudioTrack.setVolume
+            // for a whole stream, which made the ducking inaudible on the MEK-MX8Q. Doing it per
+            // write chunk, not per buffer, lets a long blocking write pick up the ramp.
+            // A loudspeaker call is mapped to MEDIA, but it is speech and must keep its level.
+            if (mappedChannel == AudioChannel.MEDIA && format.audioType != "telephony") {
+                audioFocusCoordinator.tickNavigationDucking()
+                val gain = audioFocusCoordinator.musicPcmGain
+                PcmGain.scaleS16(data, offset + written, length - written, gain)
+                val percent = (gain * 100).toInt()
+                // Report only the two settled levels, not each step of the ramp.
+                if (percent != lastDuckingPercent && (percent == 100 || percent == 25)) {
+                    lastDuckingPercent = percent
+                    runCatching { report("Audio: music gain=${percent}% applied to PCM") }
+                }
+            }
             val writeLength = if (playbackStarted) {
                 length - written
             } else {

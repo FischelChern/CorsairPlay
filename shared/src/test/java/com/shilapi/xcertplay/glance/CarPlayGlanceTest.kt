@@ -80,6 +80,26 @@ class CarPlayGlanceTest {
     }
 
     @Test
+    fun aQuietRouteIsNotAnEndedRoute() {
+        withRouteClock { advance ->
+            CarPlayGlance.setConnected(true)
+            CarPlayGlance.onFrame(frame(0x5202) { u16(1, 1); u8(3, 2) })
+            CarPlayGlance.onFrame(frame(0x5201) { u8(1, 1); u16List(0x0d, listOf(1)) })
+            assertEquals(false, CarPlayGlance.snapshot().routeEnded)
+
+            // Parked at a light: no new frame for a minute. The widget may hide the turn, but the
+            // cluster must not be told the route ended.
+            advance(60_000_000_000L)
+            assertNull(CarPlayGlance.snapshot().maneuverType)
+            assertEquals(false, CarPlayGlance.snapshot().routeEnded)
+
+            // Arriving does state it.
+            CarPlayGlance.onFrame(frame(0x5201) { u8(1, 2) })
+            assertEquals(true, CarPlayGlance.snapshot().routeEnded)
+        }
+    }
+
+    @Test
     fun aPersistentlyEmptyManeuverListExpiresAfterTheGracePeriod() {
         withRouteClock { advance ->
             CarPlayGlance.setConnected(true)

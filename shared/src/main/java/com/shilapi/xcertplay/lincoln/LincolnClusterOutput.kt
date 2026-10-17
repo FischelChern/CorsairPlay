@@ -50,6 +50,12 @@ object LincolnClusterOutput {
     private var lastSnapshot: CarPlayGlance.Snapshot? = null
     private var lastNavEnabled: Boolean? = null
     private var lastMusicEnabled: Boolean? = null
+    // The iPhone sends a transient NoRouteSet for a few tens of milliseconds when a route starts or
+    // is rerouted. Acting on it cleared the card and drew it again, which is the blink that was
+    // still visible after the 30 s staleness fix. An end has to stick before the cluster is cleared.
+    private var endedSinceNs = 0L
+    /** Injectable monotonic clock; the settle window is time-based, so tests advance it. */
+    internal var nanoTime: () -> Long = System::nanoTime
 
     // Guidance has expiry deadlines (a stale route retires ~30 s after the last frame, and an
     // empty maneuver list hides after 3 s). Those only advance when snapshot() is called, and a
@@ -61,6 +67,11 @@ object LincolnClusterOutput {
     // has not heard about within a few seconds; the firmware's own standalone bridge re-sent every
     // second, which is why its card was steady.
     private const val REPEAT_NAV_NS = 1_000_000_000L
+    /**
+     * An end must be reported this long before the cluster card is cleared. A route start or a
+     * reroute sends a momentary NoRouteSet; acting on it at once blinked the card off and on.
+     */
+    private const val END_SETTLE_NS = 2_500_000_000L
     @Volatile private var ticker: HandlerThread? = null
     @Volatile private var tickHandler: Handler? = null
     private val tick = object : Runnable {
@@ -104,6 +115,7 @@ object LincolnClusterOutput {
             lastSnapshot = null
             lastNavEnabled = null
             lastMusicEnabled = null
+            endedSinceNs = 0L
         }
     }
 
@@ -143,7 +155,7 @@ object LincolnClusterOutput {
             // Nothing changed, but the cluster still retires a nav card it has not heard about within
             // a few seconds, so keep repeating the current one (the send itself is throttled).
             if (navEnabled && snapshot.connected && navStateOn == true) {
-                synchronized(lock) { repeatLastNavLocked(app) }
+                synchronized(lock) { maintainNavLocked(app, snapshot) }
             }
             return
         }
@@ -155,7 +167,8 @@ object LincolnClusterOutput {
         lastReason = when {
             !navEnabled && !musicEnabled -> "switches off"
             !snapshot.connected -> "not connected"
-            snapshot.maneuverType == null -> "connected, no route"
+            snapshot.maneuverType == null && snapshot.routeEnded -> "connected, route ended"
+            snapshot.maneuverType == null -> "connected, no new guidance"
             turn == null -> "unknown maneuver ${snapshot.maneuverType}"
             distance == null -> "distance out of range ${snapshot.distanceMeters}"
             else -> "guidance $turn ${distance}m '${snapshot.road}'"
@@ -163,6 +176,7 @@ object LincolnClusterOutput {
         Log.i(TAG, "glance connected=${snapshot.connected} maneuver=${snapshot.maneuverType} " +
             "distance=${snapshot.distanceMeters} road='${snapshot.road}' song='${snapshot.song}' " +
             "playing=${snapshot.playing} remain=${snapshot.remainingMeters}/${snapshot.remainingSeconds} " +
+            "routeActive=${snapshot.routeActive} routeEnded=${snapshot.routeEnded} " +
             "nav=$navEnabled music=$musicEnabled -> $lastReason")
         if (!navEnabled && !musicEnabled) {
             synchronized(lock) {
@@ -173,6 +187,11 @@ object LincolnClusterOutput {
             return
         }
         synchronized(lock) {
+            if (snapshot.routeEnded) {
+                if (endedSinceNs == 0L) endedSinceNs = nanoTime()
+            } else {
+                endedSinceNs = 0L
+            }
             if (navEnabled && snapshot.connected) {
                 sendNavLocked(app, snapshot)
                 sendRemainLocked(app, snapshot)
@@ -188,17 +207,15 @@ object LincolnClusterOutput {
         val turn = LincolnClusterProtocol.turnCode(snapshot.maneuverType, snapshot.drivingSide)
         val distance = LincolnClusterProtocol.roundDistance(snapshot.distanceMeters)
         if (snapshot.maneuverType == null) {
-            // The iPhone briefly sends an empty current-maneuver list every few seconds and while
-            // rerouting; the route parser keeps routeActive set through that gap. Hold the last
-            // instruction on the cluster instead of blanking and redrawing it a moment later, which
-            // read as flicker. Re-send it on the same cadence as a fresh one, because the cluster
-            // hides a card it has not heard about within a few seconds. Only a genuine route end
-            // (Arrived/NoRouteSet, routeActive false) or a session drop clears the cluster.
-            if (snapshot.routeActive && navStateOn == true) {
-                repeatLastNavLocked(app)
-                return
-            }
-            clearNavLocked(app)
+            // No current instruction can mean three things: the iPhone's brief empty-maneuver frame
+            // (every few seconds, and while rerouting), a route whose next turn is simply not
+            // changing (the iAP2 route update goes quiet while parked at a light), or a real end.
+            // Only a real end — Arrived, NoRouteSet, or a session drop — clears the card. Anything
+            // else keeps the last instruction and re-sends it on the repeat cadence, because the
+            // cluster hides a card it has not heard about within a few seconds. Clearing on
+            // `routeActive` (a 30 s staleness timer) made the card vanish and come back while the
+            // navigation was still running.
+            maintainNavLocked(app, snapshot)
             return
         }
         if (turn == null || distance == null) {
@@ -219,7 +236,7 @@ object LincolnClusterOutput {
         // Repeat the current card at least once a second even when nothing changed: the cluster hides
         // a nav card it has not heard about within a few seconds, so a long leg or a red light made it
         // blink out and back. The standalone bridge that this firmware ships with re-sent every second.
-        val due = System.nanoTime() - lastNavSentNs >= REPEAT_NAV_NS
+        val due = nanoTime() - lastNavSentNs >= REPEAT_NAV_NS
         if (changed || due) {
             val info = Intent(LincolnClusterProtocol.ACTION_NAV_INFO)
                 .putExtra(LincolnClusterProtocol.EXTRA_NAME, turn)
@@ -230,7 +247,7 @@ object LincolnClusterOutput {
                 lastNavTurn = turn
                 lastNavDistance = distance
                 lastNavRoad = road
-                lastNavSentNs = System.nanoTime()
+                lastNavSentNs = nanoTime()
                 navSent++
                 if (changed) Log.i(TAG, "nav INFO $turn ${distance}m '${snapshot.road}' (#$navSent)")
             }
@@ -242,16 +259,46 @@ object LincolnClusterOutput {
      * current-maneuver list is briefly empty. The cluster hides a card it has not heard about within
      * a few seconds, so without this the held card would still time out and blink.
      */
+    private fun maintainNavLocked(app: Context, snapshot: CarPlayGlance.Snapshot) {
+        // A stated end still has to stick: starting or rerouting a route sends NoRouteSet for a few
+        // tens of milliseconds, and clearing on that produced a visible blink at every route start.
+        if (snapshot.routeEnded) {
+            if (endedSinceNs == 0L) endedSinceNs = nanoTime()
+        } else {
+            endedSinceNs = 0L
+        }
+        if (navStateOn != true || lastNavTurn == null) {
+            clearNavLocked(app)
+            return
+        }
+        if (snapshot.routeEnded) {
+            if (!endSettled()) {
+                repeatLastNavLocked(app)
+                return
+            }
+            clearNavLocked(app)
+            return
+        }
+        // Quiet guidance, or the iPhone's empty current-maneuver frame: hold the card and keep it
+        // alive on the cluster's own timeout.
+        repeatLastNavLocked(app)
+    }
+
+    private fun endSettled(): Boolean {
+        val since = endedSinceNs
+        return since != 0L && nanoTime() - since >= END_SETTLE_NS
+    }
+
     private fun repeatLastNavLocked(app: Context) {
         val turn = lastNavTurn ?: return
         val distance = lastNavDistance ?: return
-        if (System.nanoTime() - lastNavSentNs < REPEAT_NAV_NS) return
+        if (nanoTime() - lastNavSentNs < REPEAT_NAV_NS) return
         val info = Intent(LincolnClusterProtocol.ACTION_NAV_INFO)
             .putExtra(LincolnClusterProtocol.EXTRA_NAME, turn)
             .putExtra(LincolnClusterProtocol.EXTRA_DISTANCE, distance)
             .putExtra(LincolnClusterProtocol.EXTRA_ROAD, lastNavRoad)
         if (broadcast(app, info)) {
-            lastNavSentNs = System.nanoTime()
+            lastNavSentNs = nanoTime()
             navSent++
         }
     }
@@ -268,7 +315,8 @@ object LincolnClusterOutput {
         val meters = snapshot.remainingMeters?.toInt()?.takeIf { it in 0..LincolnClusterProtocol.MAX_REMAIN_DISTANCE_METERS }
         val seconds = snapshot.remainingSeconds?.toInt()?.takeIf { it >= 0 }
         if (meters == null && seconds == null) {
-            clearRemainLocked(app)
+            // Same rule as the instruction card: a quiet update is not a finished route.
+            if (!snapshot.connected || (snapshot.routeEnded && endSettled())) clearRemainLocked(app)
             return
         }
         val key = "$meters|$seconds"
@@ -326,6 +374,7 @@ object LincolnClusterOutput {
             lastNavDistance = null
             lastNavRoad = ""
             lastNavSentNs = 0L
+            endedSinceNs = 0L
             Log.i(TAG, "nav cleared")
         }
     }

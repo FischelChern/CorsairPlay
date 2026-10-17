@@ -55,6 +55,12 @@ internal class BydHudRouteState(
     private var lastRouteUpdateNs: Long? = null
     private var noRouteSinceNs: Long? = null
     private var holdingAcrossDrop = false
+    /**
+     * True once guidance ended for a reason the iPhone stated (Arrived/NoRouteSet) or the session
+     * dropped, as opposed to the route merely going quiet. Outputs that must not blink use this to
+     * tell "the driver finished" from "no new frame for a while".
+     */
+    private var endedExplicitly = false
 
     fun accept(messageId: Int, payload: ByteArray): BydHudRouteChange {
         if (!validTlvs(payload)) return BydHudRouteChange.NONE
@@ -97,6 +103,9 @@ internal class BydHudRouteState(
         return true
     }
 
+    /** Guidance ended explicitly (Arrived, NoRouteSet, or a session drop), not merely went quiet. */
+    fun routeEnded(): Boolean = endedExplicitly
+
     /** Next maneuver as Apple sent it, for outputs with a richer icon set than the HUD. */
     fun currentApple(): BydAppleManeuver? {
         val maneuver = activeManeuver() ?: return null
@@ -108,6 +117,7 @@ internal class BydHudRouteState(
 
     fun clear(): Boolean {
         val wasActive = routeActive
+        endedExplicitly = true
         routeActive = false
         activeIndex = -1
         distanceMeters = 0
@@ -158,6 +168,7 @@ internal class BydHudRouteState(
             if (noRoute) {
                 // Repeats keep the first time, so they cannot postpone the hide.
                 if (!holdingAcrossDrop && noRouteSinceNs == null) noRouteSinceNs = nanoTime()
+                endedExplicitly = true
                 return BydHudRouteChange.NONE
             }
             noRouteSinceNs = null
@@ -198,10 +209,14 @@ internal class BydHudRouteState(
             return BydHudRouteChange.NONE
         }
         if (firstManeuver != null) emptyListSinceNs = null
-        if (state != null) routeActive = true
+        if (state != null) {
+            routeActive = true
+            endedExplicitly = false
+        }
         if (firstManeuver != null) {
             activeIndex = firstManeuver!!
             routeActive = true
+            endedExplicitly = false
         }
         if (distance != null) distanceMeters = distance!!.coerceAtLeast(0)
         return if (current() != null) BydHudRouteChange.GUIDANCE else BydHudRouteChange.NONE

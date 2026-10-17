@@ -22,6 +22,12 @@ object CarPlayGlance {
          * route genuinely ends.
          */
         val routeActive: Boolean = false,
+        /**
+         * Guidance ended for a stated reason (arrived, the driver ended it, or the session dropped),
+         * rather than the route merely going quiet for a while. Lets a cluster clear a finished card
+         * without blinking when the iPhone simply has nothing new to send.
+         */
+        val routeEnded: Boolean = false,
         val drivingSide: Int = 0,
         val distanceMeters: Int = 0,
         val road: String = "",
@@ -111,6 +117,8 @@ object CarPlayGlance {
             connected = connected,
             maneuverType = maneuver?.type,
             routeActive = route.routeActive(),
+            // A dropped session is reported through `connected`, not as a guidance end.
+            routeEnded = connected && route.routeEnded(),
             drivingSide = maneuver?.drivingSide ?: 0,
             distanceMeters = maneuver?.distanceMeters ?: 0,
             road = maneuver?.road.orEmpty(),
