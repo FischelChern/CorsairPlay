@@ -1,9 +1,23 @@
-# Credentials and release packaging
+# 安全说明
 
-Public release distribution has resumed at the maintainer's request. The APK intentionally bundles the experimental accessory certificate and matching key described in docs/THIRD_PARTY_NOTICES.md. Anyone with the APK can extract them. Local compilation, Git history removal and obfuscation do not make a bundled shared key confidential or revoke previous copies.
+CorsairPlay 是个人自用和测试项目，不保证稳定性，也不承诺所有车机都能正常使用。
 
-The public Git tree and corresponding source archive exclude accessory keys and Android release-signing secrets. CI checks reject credential containers and private-key blocks in tracked files. Synthetic test identities are generated at runtime. Source builds have no automatic private-asset import; release packaging requires an explicit local directory and permits only the two expected runtime files.
+## 报告问题
 
-The Android APK-signing key is separate, stays local and is never bundled in the APK. Current acceptance of the experimental accessory identity does not establish Apple certification or guarantee future compatibility.
+- 普通使用问题、兼容性问题或安装问题，请提交 GitHub Issue。
+- 涉及账号、密钥、密码或其他敏感信息的问题，请使用 GitHub 的私密漏洞报告功能，不要公开发布。
 
-Review diagnostic reports before posting. Never include credentials or pairing records in public issues. Use GitHub private vulnerability reporting for sensitive findings.
+## 请不要公开
+
+- Wi-Fi 密码或车机热点密码。
+- 车辆识别码、账号信息或其他个人资料。
+- 完整诊断日志中的私密内容。
+- 认证文件、签名文件或任何密钥。
+
+## 关于 APK 中的认证资料
+
+发布用 APK 中包含实验性 CarPlay 认证资料，任何拿到 APK 的人都可能提取这些资料。
+
+Android APK 的签名密钥不会放进 APK，也不会提交到公开仓库。
+
+使用本项目即表示你理解这些风险，并自行承担测试和安装带来的后果。

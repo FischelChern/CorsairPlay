@@ -1,67 +1,55 @@
-# DiPlay
+# CorsairPlay
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md)
+林肯/福特车机使用的 CarPlay 接收器，基于 DiPlay 二次开发，支持有线无线 CarPlay。
 
-**CarPlay for compatible BYD Android head units.** Wired and wireless, with the familiar DiAuto interface. Independent app: `com.shihab.diplay`.
+> 本项目仅供个人自用和测试，属于实验性质，不保证稳定性，也不承诺适合所有车型。使用前请自行评估风险。
 
-> **BYD support scope:** These projects focus on BYD cars. They may work on other brands, but other brands are unsupported and there are no plans to add support or fix brand-specific incompatibilities.
+## 适配情况
 
-[Download & website](https://shihabal3amri.github.io/DiPlay/) · [Release](https://github.com/shihabal3amri/DiPlay/releases/tag/v0.2.20) · [Report a problem](https://github.com/shihabal3amri/DiPlay/issues/new/choose)
+- 主要面向林肯/福特车型。
+- 已重点适配 Android 8.1 车机。
+- 最低支持 Android 7.1。
+- 安装包名：`com.corsairplay`
+- 当前版本：`0.2.24`
 
-![DiPlay home](site/assets/home.png)
+## 主要功能
 
-## 0.2.20 — public preview
+1. 支持导航播报时自动压低音乐，压低程度、淡入淡出时间都可以调节，默认开启。
+2. 修复微信发送语音无声的异常，包括小度占用麦克风导致的异常。
+3. 小度被唤醒时音乐不再突然变大，小度结束后会自动恢复音乐播放。
+4. 车机“音频关闭”键可以一键关闭 CarPlay 媒体声音。
+5. 仪表歌词只显示当前歌词行，不再把“—歌名”一起显示出来。
+6. 已关闭会产生轻微周期性“波波声”的音频处理，音乐声音更干净。
+7. 默认开启“USB 下更清晰的导航语音、三项仪表转发”等选项。
 
-Install on the **car**, not the iPhone. No jailbreak, dongle, Mac, account or authentication server is required for use. Core CarPlay does not require ADB; optional dashboard, battery, wheel-speed and parked-video features do. Your head unit must permit APK installation. The APK supports Android 7.1+ (API 25); Android 7.1–8.1 support is not yet confirmed on a vehicle. Wireless supports Wi-Fi Direct, the car’s existing hotspot or Existing Wi-Fi / Same LAN. Android 7.1–9 Wi-Fi Direct uses a firmware-dependent legacy path with generated group credentials and unverified requested frequency; see [Android 9 Wi-Fi Direct](docs/ANDROID9_WIFI_DIRECT.md). Android 10+ verifies its negotiated group frequency.
+## 安装
 
-- Wired USB and wireless CarPlay with local authentication.
-- BYD HUD navigation with arrows, distance and street names on verified firmware.
-- Car hotspot support, improved audio buffering and saved receive diagnostics.
-- Automatic address discovery, fixed-channel Wi-Fi fallbacks and successful-configuration memory.
-- Icon/text size, resolution and frame rate; applying a display change reconnects CarPlay.
-- Local diagnostic export. Reports are sent only if you choose to share them.
-- Separate installation alongside DiAuto. Run one projection app at a time.
+1. 下载最新 APK。
+2. 在车机上允许安装未知来源应用。
+3. 把 APK 安装到车机，不要安装到 iPhone。
+4. 打开 CorsairPlay，按提示连接 iPhone。
+5. 基础 CarPlay 不需要 root；部分车机扩展功能可能需要额外权限或 ADB。
 
-This is **not an Apple-certified product**. The APK bundles an experimental accessory identity recovered from public Carlinkit firmware, not a newly provisioned MFi identity for DiPlay. A bundled private key is extractable. Acceptance after future iOS updates, reliability across head units and suitability of that identity for general distribution are unresolved. This release invites community testing; it is not a guarantee of universal compatibility.
+## 升级
 
-Earlier releases were tested on the development DiLink5.1 car: live windshield guidance and street names work, Car hotspot now starts CarPlay, and Wi-Fi Direct performance is substantially improved. Audio underrun recovery is improved in 0.2.15; remaining cutouts need current diagnostic reports. The 0.2.16 software Opus microphone fallback was accepted on a BOS Mini A1 head unit (Android 9) with an iPhone 12 on iOS 27. The floating-map test build was installed on the development DiLink 5.1 car; feedback led to the pinch corrections in 0.2.9. Earlier wheel-speed and video contributions were tested on a BYD Tang with DiLink 5.0 and an iPhone 15 Pro on iOS 27; wheel-speed dead reckoning in tunnels remains unverified. Broader head-unit and iOS compatibility is not guaranteed. The HUD firmware scope and cleanup limits are documented in [BYD navigation](docs/BYD_NAVIGATION.md).
+- 后续版本使用相同包名和签名，可以直接覆盖安装，原有设置会保留。
+- 如果车机上已有不同签名的同包名版本，需要先卸载旧版再安装。
+- 在线更新只会在远端版本号更高时提示，同版本不会重复安装。
 
-## What’s new in 0.2.20
+## 风险说明
 
-- Music no longer pauses every minute or so on head units whose audio clock runs fast or slow, crackles less while the head unit opens its 360° camera, and keeps separate buffers for wireless and USB.
-- Calls that a head unit sent to its earpiece play on the loudspeaker. **Settings → Audio → Calls on the loudspeaker** does the same on phones and tablets used as head units, and app voice messages can use the head unit's microphone.
-- Wired CarPlay starts on head units whose USB audio driver held the iPhone, comes back within seconds after **Save and reconnect**, and starts on Android 17.
-- **Automatically turn on the car hotspot** works on more head units, including head units that aren't BYD on Android 8.0–10 without ADB, and **Connect** in the **Car hotspot is off** dialog now connects.
-- **CarPlay map on dashboard (experimental)** finds the cluster on more BYD firmware, including the Leopard 5 Ultra, and HEVC falls back to H.264 when the head unit has no hardware decoder for it.
-- The diagnostic report records DiPlay's last crash, the wheel and media keys DiPlay received, and music rebuffers.
+- 本项目不是 Apple 官方认证产品。
+- 安装包包含实验性认证资料，任何拿到 APK 的人都可能提取这些资料。
+- 不保证未来 iPhone 系统升级后仍然兼容。
+- 不建议在重要行程中完全依赖实验功能，建议先停车测试。
 
-See [0.2.20 release notes](docs/RELEASE-NOTES-0.2.20.md) and [validation](docs/VALIDATION.md) for contribution links and remaining physical tests. General stutter, calls/Siri, decoder and model-specific reports still need current-device evidence. [0.2.19 notes](docs/RELEASE-NOTES-0.2.19.md) remain available as historical guidance.
+## 开源与许可
 
-If a problem remains, reproduce it on **0.2.20**, then use **Settings → Diagnostics → Save diagnostic report**. Android 10+ normally saves to **Downloads/DiPlay**; Android 7.1–9 asks for storage access and saves there too. If unavailable, use **View report** or **Share** from the confirmation, which identifies external/private fallback storage. Review the `.txt` and add it to a matching [existing issue](https://github.com/shihabal3amri/DiPlay/issues), or [create one](https://github.com/shihabal3amri/DiPlay/issues/new/choose). Include vehicle/head-unit model, exact firmware and Android/DiLink, phone/iOS, connection backend, relevant settings, steps and failure time. Reports are shared only when you choose; never post your hotspot password.
+本项目基于 [xcertplay](https://github.com/shilapi/xcertplay) 开发，主项目使用 GPL-3.0 许可证；部分界面资料来自 DiAuto，使用 AGPL-3.0 许可证。
 
-## Documentation
+分发修改后的 APK 时，请保留原许可证、版权说明和对应源代码，不要删除原有署名。中文说明见 [LICENSE-NOTICE.zh-CN.md](LICENSE-NOTICE.zh-CN.md)。
 
-[Existing Wi-Fi / Same LAN](docs/EXISTING_WIFI.md) keeps the iPhone and head unit
-on an external router. See the guide for setup, build requirements and the
-BYD DiLink 4.0 / Android 10 clean-install validation result.
+## 下载与反馈
 
-- [Install and connect](docs/INSTALL.md)
-- [Compatibility and troubleshooting](docs/COMPATIBILITY.md)
-- [Smooth wireless CarPlay](docs/SMOOTH_WIRELESS.md)
-- [Privacy and diagnostic reports](docs/PRIVACY.md)
-- [Build from source](docs/BUILD.md) — select `mobile` for the main DiPlay app; `maphost` is a map sample.
-- [Validation](docs/VALIDATION.md)
-- [Release notes](CHANGELOG.md)
-- [Credits and licenses](docs/THIRD_PARTY_NOTICES.md)
-
-The app and the website source include English, Arabic, Russian, Ukrainian, Spanish, Simplified Chinese, Traditional Chinese (Taiwan), and Japanese. Traditional Chinese uses Taiwan wording; the app also recognizes Hong Kong/Macao and explicit Hant selections without claiming separate regional translations. Choose the app language in Settings; on Android 13+, it stays synchronized with Android’s per-app language setting. See the [Traditional Chinese guide](README.zh-TW.md) for installation, settings, troubleshooting, privacy and build instructions.
-
-## Source and credits
-
-Based on [xcertplay](https://github.com/shilapi/xcertplay), GPL-3.0. The home/settings UI and website adapt [DiAuto](https://github.com/shihabal3amri/DiAuto), AGPL-3.0; that license is included in `docs/licenses`. Preserve those notices when distributing modifications. CarPlay and its icon belong to Apple Inc.; no Apple or BYD affiliation or endorsement is implied.
-
-This repository starts with a clean public source snapshot. Local research, tester reports and release-signing secrets are excluded. The complete source corresponding to the APK is provided with every release; experimental runtime identity assets are described separately in the build instructions and notices.
-
-## Local release packaging
-
-The release APK intentionally contains the experimental accessory identity. The Git repository and source archive exclude all accessory and Android signing keys; tests generate synthetic identities at runtime. Source/CI builds omit runtime identity assets by default. Local release builds explicitly select an external asset directory. Publishing the APK makes its bundled identity extractable; building locally does not preserve that identity's confidentiality.
+- 最新版本：https://github.com/kriskwok/DiPlay/releases/latest
+- 问题反馈：https://github.com/kriskwok/DiPlay/issues
