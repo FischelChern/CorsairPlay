@@ -51,6 +51,12 @@ object AirPlayPersistence {
     private const val KEY_NAVIGATION_AUDIO_CHANNEL = "navigation_audio_channel"
     private const val KEY_NAVIGATION_AUDIO_ATTENUATION = "navigation_audio_attenuation_db"
     private const val KEY_NAVIGATION_DUCKING_MEDIA = "navigation_ducking_media"
+    private const val KEY_NAVIGATION_DUCK_DB = "navigation_duck_db"
+    private const val KEY_NAVIGATION_DUCK_DOWN_MS = "navigation_duck_down_ms"
+    private const val KEY_NAVIGATION_DUCK_UP_MS = "navigation_duck_up_ms"
+    /** One shared fade time from the first tuning build; only read to migrate older saves. */
+    private const val KEY_NAVIGATION_DUCK_RAMP_MS = "navigation_duck_ramp_ms"
+    private const val KEY_NAVIGATION_DUCK_HOLD_MS = "navigation_duck_hold_ms"
     private const val KEY_NAVIGATION_STREAM_TYPE = "navigation_stream_type"
     private const val KEY_WIRELESS_ENABLED = "wireless_enabled"
     private const val KEY_WIRELESS_HOTSPOT_MODE = "wireless_hotspot_mode"
@@ -134,6 +140,8 @@ object AirPlayPersistence {
     // The name CarPlay shows under the "back to the car" button.
     const val DEFAULT_OEM_LABEL = "Lincoln"
     const val DEFAULT_MFI_I2C_PATH = "/dev/i2c-1"
+    /** Ambient light threshold this fork ships with for automatic day/night switching. */
+    private const val DEFAULT_AMBIENT_LUX = 120
 
     fun loadAmbientDelaySeconds(context: Context): Int =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -306,11 +314,73 @@ object AirPlayPersistence {
     /** Opt-in: lower music while CarPlay navigation guidance is actually speaking. */
     fun loadNavigationDuckingMedia(context: Context): Boolean =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getBoolean(KEY_NAVIGATION_DUCKING_MEDIA, false)
+            .getBoolean(KEY_NAVIGATION_DUCKING_MEDIA, true)
 
     fun saveNavigationDuckingMedia(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putBoolean(KEY_NAVIGATION_DUCKING_MEDIA, enabled)
+            .apply()
+    }
+
+    /** How far music drops while guidance speaks; -12 dB by default. */
+    fun loadNavigationDuckDb(context: Context): Int =
+        com.shilapi.xcertplay.media.NavigationDuckSettings.clampDb(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_NAVIGATION_DUCK_DB, com.shilapi.xcertplay.media.NavigationDuckSettings.DEFAULT_DB),
+        )
+
+    fun saveNavigationDuckDb(context: Context, db: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_NAVIGATION_DUCK_DB, com.shilapi.xcertplay.media.NavigationDuckSettings.clampDb(db))
+            .apply()
+    }
+
+    /** Fade time into the lowered level; longer is gentler and less noticeable. */
+    fun loadNavigationDuckDownMs(context: Context): Int = com.shilapi.xcertplay.media.NavigationDuckSettings
+        .clampDuckMs(loadDuckFadeMs(context, KEY_NAVIGATION_DUCK_DOWN_MS,
+            com.shilapi.xcertplay.media.NavigationDuckSettings.DEFAULT_DUCK_MS))
+
+    fun saveNavigationDuckDownMs(context: Context, ms: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_NAVIGATION_DUCK_DOWN_MS,
+                com.shilapi.xcertplay.media.NavigationDuckSettings.clampDuckMs(ms))
+            .apply()
+    }
+
+    /** Fade time back to full music; usually longer than the duck so the return is not abrupt. */
+    fun loadNavigationDuckUpMs(context: Context): Int = com.shilapi.xcertplay.media.NavigationDuckSettings
+        .clampRestoreMs(loadDuckFadeMs(context, KEY_NAVIGATION_DUCK_UP_MS,
+            com.shilapi.xcertplay.media.NavigationDuckSettings.DEFAULT_RESTORE_MS))
+
+    fun saveNavigationDuckUpMs(context: Context, ms: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_NAVIGATION_DUCK_UP_MS,
+                com.shilapi.xcertplay.media.NavigationDuckSettings.clampRestoreMs(ms))
+            .apply()
+    }
+
+    /**
+     * Builds that had one fade slider saved [KEY_NAVIGATION_DUCK_RAMP_MS]. Its value keeps applying
+     * to both directions, so an existing preference is not silently replaced by the new defaults.
+     */
+    private fun loadDuckFadeMs(context: Context, key: String, default: Int): Int {
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (preferences.contains(key)) return preferences.getInt(key, default)
+        return preferences.getInt(KEY_NAVIGATION_DUCK_RAMP_MS, default)
+    }
+
+    /** How long the lower level survives a pause between sentences. */
+    fun loadNavigationDuckHoldMs(context: Context): Int =
+        com.shilapi.xcertplay.media.NavigationDuckSettings.clampHoldMs(
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getInt(KEY_NAVIGATION_DUCK_HOLD_MS,
+                    com.shilapi.xcertplay.media.NavigationDuckSettings.DEFAULT_HOLD_MS),
+        )
+
+    fun saveNavigationDuckHoldMs(context: Context, ms: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_NAVIGATION_DUCK_HOLD_MS,
+                com.shilapi.xcertplay.media.NavigationDuckSettings.clampHoldMs(ms))
             .apply()
     }
 
@@ -607,10 +677,12 @@ object AirPlayPersistence {
             .apply()
     }
 
-    fun loadAmbientLightThreshold(context: Context): AmbientLightThreshold = AmbientLightThreshold.fromStored(
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getInt(KEY_AMBIENT_LUX_THRESHOLD, AmbientLightThreshold.DEFAULT_LUX),
-    )
+    fun loadAmbientLightThreshold(context: Context): AmbientLightThreshold {
+        val stored = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_AMBIENT_LUX_THRESHOLD, DEFAULT_AMBIENT_LUX)
+        return if (AmbientLightThreshold.isValid(stored)) AmbientLightThreshold(stored)
+        else AmbientLightThreshold(DEFAULT_AMBIENT_LUX)
+    }
 
     fun saveAmbientLightThreshold(context: Context, threshold: AmbientLightThreshold) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -627,7 +699,8 @@ object AirPlayPersistence {
     }
 
     fun loadCarPlayNightMode(context: Context): CarPlayNightMode = CarPlayNightMode.fromKey(
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_CARPLAY_NIGHT_MODE, null),
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_CARPLAY_NIGHT_MODE, CarPlayNightMode.AMBIENT.key),
     )
 
     fun saveCarPlayNightMode(context: Context, mode: CarPlayNightMode) {
@@ -655,7 +728,7 @@ object AirPlayPersistence {
 
     fun loadFps(context: Context): Int = AirPlayDisplaySettings.sanitizeFps(
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getInt(KEY_FPS, 30),
+            .getInt(KEY_FPS, 60),
     )
 
     /** Music buffer for the session's transport. Wireless and wired USB have separate settings. */
@@ -680,7 +753,7 @@ object AirPlayPersistence {
 
     /** Do not offer 8 and 16 kHz PCM for navigation prompts and alerts; applies at reconnect. */
     fun loadSpeechWithout8And16Khz(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_SPEECH_WITHOUT_8_16_KHZ, false)
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_SPEECH_WITHOUT_8_16_KHZ, true)
 
     fun saveSpeechWithout8And16Khz(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_SPEECH_WITHOUT_8_16_KHZ, enabled).apply()

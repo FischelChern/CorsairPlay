@@ -920,6 +920,13 @@
     <string name="settings_navigation_attenuation_description">仅降低 CarPlay 导航播报音量，不影响音乐和通话。调整立即生效，车机自身的导航音量仍可使用。</string>
     <string name="settings_navigation_ducking">导航播报时压低音乐</string>
     <string name="settings_navigation_ducking_description">iPhone 导航播报时自动降低 CarPlay 音乐音量，播报结束后恢复；通话和 Siri 音量不受影响。调整立即生效，默认关闭。</string>
+    <string name="settings_navigation_duck_amount">压低幅度</string>
+    <string name="settings_navigation_duck_amount_value">低 %1$d dB</string>
+    <string name="settings_navigation_duck_fade_out">压低时的淡出时间</string>
+    <string name="settings_navigation_duck_fade_in">恢复时的淡入时间</string>
+    <string name="settings_navigation_duck_hold">句间保持压低</string>
+    <string name="settings_navigation_duck_ms_value">%1$d 毫秒</string>
+    <string name="settings_navigation_duck_tuning_description">想要更柔和：dB 数值调小、淡出与淡入时间调长、句间保持时间调长，都会让变化更不易察觉。CarPlay 播放中调整立即生效。</string>
     <string name="settings_car_hotspot_control">车辆热点</string>
     <string name="settings_auto_car_hotspot_system_description">打开 Lincoln 时及无线连接前开启已保存的车辆热点。Lincoln 需要 Android 的“修改系统设置”权限；无需 ADB。若要在完全重启后也有热点，请同时开启“车辆启动后打开 Lincoln”。热点不会自动关闭。</string>
     <string name="settings_write_settings_granted">“修改系统设置”权限：已允许</string>

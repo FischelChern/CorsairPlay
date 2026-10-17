@@ -17,14 +17,14 @@ class CarPlayNightModePersistenceTest {
 
     @Before fun clearPreferences() { prefs.edit().clear().apply() }
 
-    @Test fun freshInstallAndUnknownValuesFollowSystem() {
-        assertEquals(CarPlayNightMode.SYSTEM, AirPlayPersistence.loadCarPlayNightMode(context))
+    @Test fun freshInstallUsesAmbientAndUnknownValuesFollowSystem() {
+        assertEquals(CarPlayNightMode.AMBIENT, AirPlayPersistence.loadCarPlayNightMode(context))
         prefs.edit().putString("carplay_night_mode", "future-mode").apply()
         assertEquals(CarPlayNightMode.SYSTEM, AirPlayPersistence.loadCarPlayNightMode(context))
     }
 
     @Test fun thresholdDefaultAndCustomValuePersist() {
-        assertEquals(AmbientLightThreshold(30), AirPlayPersistence.loadAmbientLightThreshold(context))
+        assertEquals(AmbientLightThreshold(120), AirPlayPersistence.loadAmbientLightThreshold(context))
         AirPlayPersistence.saveCarPlayNightMode(context, CarPlayNightMode.AMBIENT)
         AirPlayPersistence.saveAmbientLightThreshold(context, AmbientLightThreshold(200))
         assertEquals(AmbientLightThreshold(200), AirPlayPersistence.loadAmbientLightThreshold(context))
@@ -36,7 +36,7 @@ class CarPlayNightModePersistenceTest {
     @Test fun invalidStoredThresholdRestoresTheDefault() {
         for (lux in listOf(-1, 0, 200_001)) {
             prefs.edit().putInt("ambient_lux_threshold", lux).apply()
-            assertEquals(AmbientLightThreshold(), AirPlayPersistence.loadAmbientLightThreshold(context))
+            assertEquals(AmbientLightThreshold(120), AirPlayPersistence.loadAmbientLightThreshold(context))
         }
     }
 

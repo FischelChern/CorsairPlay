@@ -963,6 +963,13 @@
     <string name="settings_navigation_attenuation_description">Reduce CarPlay navigation guidance without changing music or call volume. Applies immediately; your head unit’s navigation volume still works.</string>
     <string name="settings_navigation_ducking">Lower music during navigation</string>
     <string name="settings_navigation_ducking_description">Lower CarPlay music while an iPhone navigation prompt is speaking, then restore it. Calls and Siri keep their own volume. Applies immediately; off by default.</string>
+    <string name="settings_navigation_duck_amount">How far to lower music</string>
+    <string name="settings_navigation_duck_amount_value">%1$d dB quieter</string>
+    <string name="settings_navigation_duck_fade_out">Fade out when a prompt starts</string>
+    <string name="settings_navigation_duck_fade_in">Fade back in when it ends</string>
+    <string name="settings_navigation_duck_hold">Keep music lowered between sentences</string>
+    <string name="settings_navigation_duck_ms_value">%1$d ms</string>
+    <string name="settings_navigation_duck_tuning_description">Gentler settings: a smaller number of dB, a longer fade-out, fade-in, and hold all make the change less noticeable. Applies immediately while CarPlay is playing.</string>
     <string name="settings_car_hotspot_control">Car hotspot</string>
     <string name="settings_auto_car_hotspot_system_description">Turns on the saved car hotspot when Lincoln opens and before a wireless connection. Lincoln needs Android\'s “Modify system settings” access; ADB is not required. To have the hotspot after a full restart, also turn on opening Lincoln after the car starts. The hotspot is not turned off automatically.</string>
     <string name="settings_write_settings_granted">“Modify system settings” access: allowed</string>

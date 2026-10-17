@@ -920,6 +920,13 @@
     <string name="settings_navigation_attenuation_description">只降低 CarPlay 導航提示音量，不影響音樂與通話。調整立即生效，仍可使用車機本身的導航音量。</string>
     <string name="settings_navigation_ducking">導航提示時壓低音樂</string>
     <string name="settings_navigation_ducking_description">iPhone 導航提示時自動降低 CarPlay 音樂音量，提示結束後恢復；通話與 Siri 音量不受影響。調整立即生效，預設關閉。</string>
+    <string name="settings_navigation_duck_amount">壓低幅度</string>
+    <string name="settings_navigation_duck_amount_value">低 %1$d dB</string>
+    <string name="settings_navigation_duck_fade_out">壓低時的淡出時間</string>
+    <string name="settings_navigation_duck_fade_in">恢復時的淡入時間</string>
+    <string name="settings_navigation_duck_hold">句間保持壓低</string>
+    <string name="settings_navigation_duck_ms_value">%1$d 毫秒</string>
+    <string name="settings_navigation_duck_tuning_description">想要更柔和：dB 數值調小、淡出與淡入時間調長、句間保持時間調長，都會讓變化更不易察覺。CarPlay 播放中調整立即生效。</string>
     <string name="settings_car_hotspot_control">車輛熱點</string>
     <string name="settings_auto_car_hotspot_system_description">開啟 Lincoln 時及無線連線前開啟已儲存的車輛熱點。Lincoln 需要 Android 的「修改系統設定」權限；不需要 ADB。若要在完全重新啟動後也有熱點，請同時開啟「車輛啟動後開啟 Lincoln」。熱點不會自動關閉。</string>
     <string name="settings_write_settings_granted">「修改系統設定」權限：已允許</string>

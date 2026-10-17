@@ -14,18 +14,22 @@ object LincolnClusterSettings {
     private const val KEY_REMAINING = "remaining"
     private const val KEY_CLUSTER_PACKAGE = "cluster_package"
 
-    fun navigation(context: Context): Boolean = prefs(context).getBoolean(KEY_NAVIGATION, false)
+    /** On by default on the Lincoln/Ford hardware this fork targets; elsewhere it stays opt-in. */
+    fun navigation(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_NAVIGATION, LincolnVehicle.isHardware())
 
     fun setNavigation(context: Context, enabled: Boolean) =
         prefs(context).edit().putBoolean(KEY_NAVIGATION, enabled).apply()
 
-    fun music(context: Context): Boolean = prefs(context).getBoolean(KEY_MUSIC, false)
+    fun music(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_MUSIC, LincolnVehicle.isHardware())
 
     fun setMusic(context: Context, enabled: Boolean) =
         prefs(context).edit().putBoolean(KEY_MUSIC, enabled).apply()
 
     /** Experimental: also send total remaining distance/time, which the tested cluster may ignore. */
-    fun remaining(context: Context): Boolean = prefs(context).getBoolean(KEY_REMAINING, false)
+    fun remaining(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_REMAINING, LincolnVehicle.isHardware())
 
     fun setRemaining(context: Context, enabled: Boolean) =
         prefs(context).edit().putBoolean(KEY_REMAINING, enabled).apply()

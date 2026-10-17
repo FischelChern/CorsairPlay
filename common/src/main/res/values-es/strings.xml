@@ -860,6 +860,13 @@
     <string name="settings_navigation_attenuation_description">Reduce solo las indicaciones de navegación de CarPlay, sin cambiar música ni llamadas. Se aplica al instante; sigue funcionando el volumen de navegación de la unidad.</string>
     <string name="settings_navigation_ducking">Bajar la música durante la navegación</string>
     <string name="settings_navigation_ducking_description">Baja la música de CarPlay mientras suena una indicación del iPhone y la restaura al terminar. Las llamadas y Siri conservan su volumen. Se aplica al instante y está desactivado de forma predeterminada.</string>
+    <string name="settings_navigation_duck_amount">Cuánto bajar la música</string>
+    <string name="settings_navigation_duck_amount_value">%1$d dB menos</string>
+    <string name="settings_navigation_duck_fade_out">Fundido al empezar el aviso</string>
+    <string name="settings_navigation_duck_fade_in">Fundido de vuelta al terminar</string>
+    <string name="settings_navigation_duck_hold">Mantener bajada entre frases</string>
+    <string name="settings_navigation_duck_ms_value">%1$d ms</string>
+    <string name="settings_navigation_duck_tuning_description">Para que se note menos: menos dB, un fundido más largo y una retención más larga. Se aplica al instante mientras CarPlay reproduce.</string>
     <string name="settings_car_hotspot_control">Punto de acceso del coche</string>
     <string name="settings_auto_car_hotspot_system_description">Activa el punto de acceso guardado del coche al abrir Lincoln y antes de una conexión inalámbrica. Lincoln necesita el acceso de Android «Modificar ajustes del sistema»; no se requiere ADB. Para tener el punto de acceso tras un reinicio completo, activa también abrir Lincoln al arrancar el coche. El punto de acceso no se desactiva automáticamente.</string>
     <string name="settings_write_settings_granted">Acceso «Modificar ajustes del sistema»: permitido</string>

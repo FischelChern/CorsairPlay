@@ -42,18 +42,18 @@ class NavigationDuckingTest {
         coordinator.navigationAudioDetected()
         // A 20 ms cadence reaches the ducked level inside the 300 ms ramp.
         repeat(20) { now += 20_000_000L; coordinator.tickNavigationDucking() }
-        assertEquals(0.25f, coordinator.musicPcmGain, 0.0001f)
+        assertEquals(NavigationDuckSettings.linear(-12), coordinator.musicPcmGain, 0.0001f)
 
         // Guidance keeps extending the hold, so music stays ducked.
         now += 300_000_000L
         coordinator.navigationAudioDetected()
         now += 300_000_000L
         coordinator.tickNavigationDucking()
-        assertEquals(0.25f, coordinator.musicPcmGain, 0.0001f)
+        assertEquals(NavigationDuckSettings.linear(-12), coordinator.musicPcmGain, 0.0001f)
 
-        // A pause longer than the hold ramps back to unity.
+        // A pause longer than the hold ramps back to unity, over the longer restore fade.
         now += 1_000_000_000L
-        repeat(20) { now += 20_000_000L; coordinator.tickNavigationDucking() }
+        repeat(50) { now += 20_000_000L; coordinator.tickNavigationDucking() }
         assertEquals(1f, coordinator.musicPcmGain, 0.0001f)
     }
 
@@ -72,7 +72,7 @@ class NavigationDuckingTest {
         on.acquire(call, AudioChannel.MEDIA, speechAttributes)
         on.navigationAudioDetected()
         repeat(20) { now += 20_000_000L; on.tickNavigationDucking() }
-        assertEquals(0.25f, on.musicPcmGain, 0.0001f)
+        assertEquals(NavigationDuckSettings.linear(-12), on.musicPcmGain, 0.0001f)
         // A loudspeaker call is mapped to MEDIA but is speech; the renderer skips scaling it.
     }
 
@@ -83,8 +83,95 @@ class NavigationDuckingTest {
         coordinator.setNavigationDuckingEnabled(true)
         coordinator.navigationAudioDetected()
         repeat(20) { now += 20_000_000L; coordinator.tickNavigationDucking() }
-        assertEquals(0.25f, coordinator.musicPcmGain, 0.0001f)
+        assertEquals(NavigationDuckSettings.linear(-12), coordinator.musicPcmGain, 0.0001f)
         coordinator.setNavigationDuckingEnabled(false)
+        assertEquals(1f, coordinator.musicPcmGain, 0.0001f)
+    }
+
+    @Test fun aGentlerShallowerAndLongerRampIsHonoured() {
+        var now = 1_000_000_000L
+        val coordinator = AudioFocusCoordinator(null, false)
+        coordinator.nanoTime = { now }
+        coordinator.setNavigationDuckingEnabled(true)
+        coordinator.setNavigationDuckTuning(db = -4, duckMs = 1_000, restoreMs = 1_000, holdMs = 2_000)
+        coordinator.navigationAudioDetected()
+        coordinator.tickNavigationDucking()
+
+        // Halfway through a one-second fade into -4 dB, the gain is halfway down, not already there.
+        now += 500_000_000L
+        coordinator.tickNavigationDucking()
+        assertEquals(0.8f, coordinator.musicPcmGain, 0.02f)
+
+        now += 600_000_000L
+        coordinator.tickNavigationDucking()
+        assertEquals(0.63f, coordinator.musicPcmGain, 0.02f)
+
+        // The longer hold keeps it down through a two-second gap...
+        now += 1_900_000_000L
+        coordinator.tickNavigationDucking()
+        assertTrue(coordinator.musicPcmGain < 0.9f)
+
+        // ...and only then ramps back, over the configured second rather than instantly.
+        now += 200_000_000L
+        coordinator.tickNavigationDucking()
+        assertTrue(coordinator.musicPcmGain < 1f)
+    }
+
+    @Test fun changingTheFadeTimesAtRuntimeDoesNotNeedAReconnect() {
+        var now = 1_000_000_000L
+        val coordinator = AudioFocusCoordinator(null, false)
+        coordinator.nanoTime = { now }
+        coordinator.setNavigationDuckingEnabled(true)
+        coordinator.setNavigationDuckTuning(db = -20, duckMs = 200, restoreMs = 200, holdMs = 900)
+        coordinator.navigationAudioDetected()
+        coordinator.tickNavigationDucking()
+        now += 250_000_000L
+        coordinator.tickNavigationDucking()
+        assertEquals(0.1f, coordinator.musicPcmGain, 0.02f)
+
+        // A new amount applies from wherever the gain is, without snapping music back to full.
+        // A long hold keeps the prompt "speaking" so this test measures only the ramp.
+        coordinator.setNavigationDuckTuning(db = -6, duckMs = 800, restoreMs = 800, holdMs = 5_000)
+        coordinator.tickNavigationDucking()
+        assertTrue(coordinator.musicPcmGain < 0.2f)
+        now += 900_000_000L
+        coordinator.tickNavigationDucking()
+        assertEquals(0.5f, coordinator.musicPcmGain, 0.02f)
+    }
+
+    @Test fun duckingDownAndRestoringUseTheirOwnFadeTimes() {
+        var now = 1_000_000_000L
+        val coordinator = AudioFocusCoordinator(null, false)
+        coordinator.nanoTime = { now }
+        coordinator.setNavigationDuckingEnabled(true)
+        // Snap down over 200 ms but come back slowly, over one second.
+        coordinator.setNavigationDuckTuning(db = -12, duckMs = 200, restoreMs = 1_000, holdMs = 300)
+        coordinator.navigationAudioDetected()
+        coordinator.tickNavigationDucking()
+
+        // 100 ms in, the fast fade is halfway down.
+        now += 100_000_000L
+        coordinator.tickNavigationDucking()
+        assertEquals(0.625f, coordinator.musicPcmGain, 0.02f)
+
+        // 300 ms in the fast duck has arrived and the 300 ms hold is just expiring.
+        now += 200_000_000L
+        coordinator.tickNavigationDucking()
+        assertEquals(NavigationDuckSettings.linear(-12), coordinator.musicPcmGain, 0.0001f)
+
+        // The slow return starts only on the first tick after the hold, not when the duck arrives.
+        now += 600_000_000L
+        coordinator.tickNavigationDucking()
+        assertEquals(NavigationDuckSettings.linear(-12), coordinator.musicPcmGain, 0.0001f)
+
+        // Halfway through the one-second restore it is still climbing; a 200 ms fade would be done.
+        now += 500_000_000L
+        coordinator.tickNavigationDucking()
+        assertTrue(coordinator.musicPcmGain < 1f)
+        assertTrue(coordinator.musicPcmGain > NavigationDuckSettings.linear(-12))
+
+        now += 600_000_000L
+        coordinator.tickNavigationDucking()
         assertEquals(1f, coordinator.musicPcmGain, 0.0001f)
     }
 
@@ -161,7 +248,7 @@ class NavigationDuckingTest {
             coordinator.nanoTime = { fake }
             coordinator.navigationAudioDetected()
             repeat(20) { fake += 20_000_000L; coordinator.tickNavigationDucking() }
-            assertEquals(0.25f, coordinator.musicPcmGain, 0.001f)
+            assertEquals(NavigationDuckSettings.linear(-12), coordinator.musicPcmGain, 0.001f)
 
             val ducked = loudBytes()
             write.invoke(renderer, ducked, 0, ducked.size)

@@ -1845,7 +1845,11 @@ class CarPlayController(
         val device = iphoneHost.discover().firstOrNull()
         if (device == null) {
             onStatus(CarPlayStatus.WaitingForIphone)
-            scheduleAvailabilityPoll(Phase.IPHONE, ::checkIphoneAvailability)
+            scheduleAvailabilityPoll(
+                Phase.IPHONE,
+                IPHONE_AVAILABILITY_POLL_INTERVAL_MILLIS,
+                ::checkIphoneAvailability,
+            )
         } else {
             debugLog(
                 "wired iPhone discovered vid=0x${device.vendorId.toString(16)} " +
@@ -2047,7 +2051,16 @@ class CarPlayController(
         }
     }
 
-    private fun scheduleAvailabilityPoll(phase: Phase, check: () -> Unit) {
+    /**
+     * Polls for the hardware a phase is waiting on. The iPhone reappears immediately after
+     * re-enumeration and its attach broadcast is not guaranteed then, so a shorter interval takes
+     * seconds off wired startup. The MFi coprocessor is probed over I2C and keeps the relaxed one.
+     */
+    private fun scheduleAvailabilityPoll(
+        phase: Phase,
+        intervalMillis: Long = DEVICE_AVAILABILITY_POLL_INTERVAL_MILLIS,
+        check: () -> Unit,
+    ) {
         val generation = availabilityPollGeneration.get()
         mainHandler.postDelayed(
             {
@@ -2059,7 +2072,7 @@ class CarPlayController(
                     check()
                 }
             },
-            DEVICE_AVAILABILITY_POLL_INTERVAL_MILLIS,
+            intervalMillis,
         )
     }
 
@@ -3033,6 +3046,8 @@ class CarPlayController(
         private const val PERMISSION_POLL_INTERVAL_MILLIS = 500L
         private const val PERMISSION_POLL_TIMEOUT_MILLIS = 120_000L
         private const val DEVICE_AVAILABILITY_POLL_INTERVAL_MILLIS = 2_000L
+        /** Much faster: the wired session waits on this between re-enumeration and data paths. */
+        private const val IPHONE_AVAILABILITY_POLL_INTERVAL_MILLIS = 300L
         private const val WIRELESS_HANDOFF_TIMEOUT_MILLIS = 45_000L
         private const val RFCOMM_CONNECT_TIMEOUT_MILLIS = 15_000L
         private const val MAXIMUM_REENUMERATION_ATTEMPTS = 2

@@ -753,7 +753,8 @@ class AdaptiveSettingsUiTest {
             PendingReconnect.clear()
             ReflectionHelpers.setField(screen, "settingsCategory", SettingsCategory.AUDIO)
             ReflectionHelpers.callInstanceMethod<Unit>(screen, "render")
-            val slider = descendants(screen.window.decorView).filterIsInstance<SeekBar>().single()
+            // The audio page also has the navigation-duck tuning sliders; this one runs 0..20 dB.
+            val slider = descendants(screen.window.decorView).filterIsInstance<SeekBar>().single { it.max == 20 }
             assertEquals(20, slider.max)
             assertEquals(20, slider.progress)
             val listener = SeekBar::class.java.getDeclaredField("mOnSeekBarChangeListener")
@@ -786,7 +787,7 @@ class AdaptiveSettingsUiTest {
         ReflectionHelpers.setField(screen, "settingsCategory", SettingsCategory.AUDIO)
         ReflectionHelpers.callInstanceMethod<Unit>(screen, "render")
         layoutRoot(screen)
-        val slider = descendants(screen.window.decorView).filterIsInstance<SeekBar>().single()
+        val slider = descendants(screen.window.decorView).filterIsInstance<SeekBar>().single { it.max == 20 }
         slider.requestRectangleOnScreen(Rect(0, 0, slider.width, slider.height), true)
         layoutRoot(screen)
         val rectangle = Rect()

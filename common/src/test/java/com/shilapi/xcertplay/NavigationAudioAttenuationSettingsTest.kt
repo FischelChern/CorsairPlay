@@ -25,9 +25,9 @@ class NavigationAudioAttenuationSettingsTest {
         assertEquals(NavigationAudioGain.MAX_DB, AirPlayPersistence.loadNavigationAudioAttenuationDb(context))
     }
 
-    @Test fun musicDuckingIsOffByDefaultAndSurvivesABackupRoundTrip() {
+    @Test fun musicDuckingIsOnByDefaultAndSurvivesABackupRoundTrip() {
         context.getSharedPreferences("xcertplay_airplay", Context.MODE_PRIVATE).edit().clear().commit()
-        assertEquals(false, AirPlayPersistence.loadNavigationDuckingMedia(context))
+        assertEquals(true, AirPlayPersistence.loadNavigationDuckingMedia(context))
         AirPlayPersistence.saveNavigationDuckingMedia(context, true)
         assertEquals(true, AirPlayPersistence.loadNavigationDuckingMedia(context))
 

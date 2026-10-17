@@ -2100,7 +2100,69 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 AirPlayPersistence.loadNavigationDuckingMedia(this)) {
                 AirPlayPersistence.saveNavigationDuckingMedia(this, it)
                 CarPlayBackgroundSession.snapshot()?.sink?.setNavigationDuckingEnabled(it)
+                // The tuning rows stay visible either way, so a driver can set them before enabling.
+                render()
             }
+            val dbSlider = overlaySliderRow(
+                getString(R.string.settings_navigation_duck_amount),
+                (com.shilapi.xcertplay.media.NavigationDuckSettings.MAX_DB downTo
+                    com.shilapi.xcertplay.media.NavigationDuckSettings.MIN_DB).toList(),
+                AirPlayPersistence.loadNavigationDuckDb(this),
+            ) { db -> getString(R.string.settings_navigation_duck_amount_value, -db) }
+            dbSlider.slider.contentDescription = getString(
+                R.string.settings_navigation_duck_amount,
+            ) + ": " + getString(
+                R.string.settings_navigation_duck_amount_value, -AirPlayPersistence.loadNavigationDuckDb(this),
+            )
+            dbSlider.onSave = { db ->
+                AirPlayPersistence.saveNavigationDuckDb(this, db)
+                applyNavigationDuckTuning()
+                dbSlider.slider.contentDescription = getString(
+                    R.string.settings_navigation_duck_amount_value, -db)
+            }
+            card.addView(dbSlider)
+
+            val duckSlider = overlaySliderRow(
+                getString(R.string.settings_navigation_duck_fade_out),
+                com.shilapi.xcertplay.media.NavigationDuckSettings.RAMP_PRESETS,
+                AirPlayPersistence.loadNavigationDuckDownMs(this),
+            ) { ms -> getString(R.string.settings_navigation_duck_ms_value, ms) }
+            duckSlider.onSave = { ms ->
+                AirPlayPersistence.saveNavigationDuckDownMs(this, ms)
+                applyNavigationDuckTuning()
+                duckSlider.slider.contentDescription =
+                    getString(R.string.settings_navigation_duck_ms_value, ms)
+            }
+            card.addView(duckSlider)
+
+            val restoreSlider = overlaySliderRow(
+                getString(R.string.settings_navigation_duck_fade_in),
+                com.shilapi.xcertplay.media.NavigationDuckSettings.RAMP_PRESETS,
+                AirPlayPersistence.loadNavigationDuckUpMs(this),
+            ) { ms -> getString(R.string.settings_navigation_duck_ms_value, ms) }
+            restoreSlider.onSave = { ms ->
+                AirPlayPersistence.saveNavigationDuckUpMs(this, ms)
+                applyNavigationDuckTuning()
+                restoreSlider.slider.contentDescription =
+                    getString(R.string.settings_navigation_duck_ms_value, ms)
+            }
+            card.addView(restoreSlider)
+
+            val holdSlider = overlaySliderRow(
+                getString(R.string.settings_navigation_duck_hold),
+                com.shilapi.xcertplay.media.NavigationDuckSettings.HOLD_PRESETS,
+                AirPlayPersistence.loadNavigationDuckHoldMs(this),
+            ) { ms -> getString(R.string.settings_navigation_duck_ms_value, ms) }
+            holdSlider.onSave = { ms ->
+                AirPlayPersistence.saveNavigationDuckHoldMs(this, ms)
+                applyNavigationDuckTuning()
+                holdSlider.slider.contentDescription =
+                    getString(R.string.settings_navigation_duck_ms_value, ms)
+            }
+            card.addView(holdSlider)
+            card.addView(label(getString(R.string.settings_navigation_duck_tuning_description), 14, MUTED).apply {
+                setPadding(0, dp(SETTINGS_BLOCK_GAP_DP), 0, 0)
+            })
             musicBufferChoice(card, wireless = true)
             musicBufferChoice(card, wireless = false)
             toggle(card, getString(R.string.settings_call_speakerphone), getString(R.string.settings_call_speakerphone_description),
@@ -3714,6 +3776,16 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             delta < 0 -> "$negative ${-delta} %"
             else -> "$positive $delta %"
         }
+    }
+
+    /** Push the Audio page's ducking tuning into the running sink, if any. */
+    private fun applyNavigationDuckTuning() {
+        CarPlayBackgroundSession.snapshot()?.sink?.setNavigationDuckTuning(
+            AirPlayPersistence.loadNavigationDuckDb(this),
+            AirPlayPersistence.loadNavigationDuckDownMs(this),
+            AirPlayPersistence.loadNavigationDuckUpMs(this),
+            AirPlayPersistence.loadNavigationDuckHoldMs(this),
+        )
     }
 
     private fun showClusterAccessSetup() {

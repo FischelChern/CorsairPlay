@@ -4918,6 +4918,10 @@ class CarPlayHostActivity : ComponentActivity() {
             navigationChannel = AirPlayPersistence.loadNavigationAudioChannel(this),
             navigationAttenuationDb = AirPlayPersistence.loadNavigationAudioAttenuationDb(this),
             navigationDuckingEnabled = AirPlayPersistence.loadNavigationDuckingMedia(this),
+            navigationDuckDb = AirPlayPersistence.loadNavigationDuckDb(this),
+            navigationDuckMs = AirPlayPersistence.loadNavigationDuckDownMs(this),
+            navigationDuckRestoreMs = AirPlayPersistence.loadNavigationDuckUpMs(this),
+            navigationDuckHoldMs = AirPlayPersistence.loadNavigationDuckHoldMs(this),
             context = this,
             navigationStreamType = navigationStreamType,
             onScreenStreamActiveChanged = { type, active ->
