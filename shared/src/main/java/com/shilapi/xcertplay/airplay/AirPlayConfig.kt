@@ -96,6 +96,14 @@ data class AirPlayConfig(
      * default stream (#148, #341). When set, 8 and 16 kHz are not offered for default and alert audio.
      */
     val speechWithout8And16Khz: Boolean = false,
+    /**
+     * Do not offer 48 kHz for the microphone input, leaving 32 kHz as the highest rate.
+     *
+     * WeChat's own voice mode (voice messages and app calls) asks CarPlay for a 48 kHz input and then
+     * records silence, while Siri, dictation and phone calls work at lower rates (#718). Removing the
+     * top rate makes the iPhone negotiate one of those instead.
+     */
+    val microphoneWithout48Khz: Boolean = false,
 )
 
 /** The offer, SETUP and controls must all honor the user's audio-output setting. */

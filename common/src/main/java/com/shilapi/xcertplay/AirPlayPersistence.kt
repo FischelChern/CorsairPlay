@@ -82,6 +82,7 @@ object AirPlayPersistence {
     private const val KEY_WIRED_MEDIA_BUFFER_MS = "wired_media_buffer_ms"
     private const val KEY_MAIN_BUFFERED_AUDIO = "main_buffered_audio"
     private const val KEY_SPEECH_WITHOUT_8_16_KHZ = "speech_without_8_16_khz"
+    private const val KEY_MIC_WITHOUT_48_KHZ = "microphone_without_48_khz"
     private const val KEY_MUSIC_CLOCK_TRIM = "music_clock_trim"
     private const val KEY_CAR_BLUETOOTH_AUDIO = "car_bluetooth_audio"
     private const val KEY_CALL_ECHO_CANCELLATION = "call_echo_cancellation"
@@ -757,6 +758,17 @@ object AirPlayPersistence {
 
     fun saveSpeechWithout8And16Khz(context: Context, enabled: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_SPEECH_WITHOUT_8_16_KHZ, enabled).apply()
+    }
+
+    /**
+     * Leave 48 kHz off the microphone input formats, so the iPhone negotiates 32 kHz or lower.
+     * Applies at the next CarPlay connection.
+     */
+    fun loadMicrophoneWithout48Khz(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_MIC_WITHOUT_48_KHZ, true)
+
+    fun saveMicrophoneWithout48Khz(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_MIC_WITHOUT_48_KHZ, enabled).apply()
     }
 
     /**

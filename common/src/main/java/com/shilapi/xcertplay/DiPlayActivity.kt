@@ -2058,6 +2058,12 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 AirPlayPersistence.saveSpeechWithout8And16Khz(this, it)
                 reconnectIfRunning()
             }
+            toggle(card, getString(R.string.settings_microphone_without_48khz),
+                getString(R.string.settings_microphone_without_48khz_description),
+                AirPlayPersistence.loadMicrophoneWithout48Khz(this)) {
+                AirPlayPersistence.saveMicrophoneWithout48Khz(this, it)
+                reconnectIfRunning()
+            }
             toggle(card, getString(R.string.settings_music_clock_trim), getString(R.string.settings_music_clock_trim_description),
                 AirPlayPersistence.loadMusicClockTrim(this)) {
                 AirPlayPersistence.saveMusicClockTrim(this, it)

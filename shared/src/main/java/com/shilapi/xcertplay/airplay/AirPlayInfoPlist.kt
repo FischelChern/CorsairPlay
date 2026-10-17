@@ -51,7 +51,7 @@ object AirPlayInfoPlist {
         if (!config.disableAudioOutput) {
             info["audioLatencies"] = audioLatencies()
             info["audioFormats"] = audioFormats(config.entertainmentSampleRate, config.microphone, config.mainBufferedAudio, config.microphoneOpus,
-                config.speechWithout8And16Khz)
+                config.speechWithout8And16Khz, config.microphoneWithout48Khz)
         }
         info["extendedFeatures"] = listOf("vocoderInfo", "enhancedRequestCarUI")
         info["displays"] = displays
@@ -125,6 +125,7 @@ object AirPlayInfoPlist {
         mainBuffered: Boolean = false,
         microphoneOpus: Boolean = true,
         speechWithout8And16Khz: Boolean = false,
+        microphoneWithout48Khz: Boolean = false,
     ): List<Map<String, Any?>> {
         fun format(type: Int, audioType: String, outputFormats: Int, inputFormats: Int? = null): Map<String, Any?> {
             val entry = linkedMapOf<String, Any?>(
@@ -141,13 +142,16 @@ object AirPlayInfoPlist {
         val pcm = pcmVoice or (if (is48) 0xc000 else 0xc00)
         // PCM 8 kHz and 16 kHz, mono and stereo.
         val speech = if (speechWithout8And16Khz) pcm and 0x3c.inv() else pcm
+        // 0x154 offers 8, 16 and 32 kHz mono; 0x400 adds 44.1 kHz and 0x4000 adds 48 kHz.
         val pcmMono = 0x154 or (if (is48) 0x4000 else 0x400)
+        // The microphone input can give up 44.1 and 48 kHz, leaving 32 kHz as the top rate.
+        val pcmMonoInput = if (microphoneWithout48Khz) 0x154 else pcmMono
         val opus = 0x70000000
         val aacLc = if (is48) 0x800000 else 0x400000
-        val pcmInput = if (microphone) pcmMono else null
+        val pcmInput = if (microphone) pcmMonoInput else null
         // Retain Opus whenever platform or bundled software encoding is usable. PCM-only wireless
         // negotiation is not a universal fallback; a missing MediaCodec encoder is insufficient.
-        val wirelessInput = if (microphone) (if (microphoneOpus) pcmMono or opus else pcmMono) else null
+        val wirelessInput = if (microphone) (if (microphoneOpus) pcmMonoInput or opus else pcmMonoInput) else null
 
         return listOf(
             format(100, "compatibility", pcm, pcmInput),

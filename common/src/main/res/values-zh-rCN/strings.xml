@@ -884,6 +884,8 @@
     <string name="settings_hotspot_name_non_english">热点名称含中文或其他非英文字符时，部分车机广播的名称 iPhone 找不到，CarPlay 会停在「正在准备 CarPlay…」。如出现这种情况，请把车机热点改为英文字母和数字的名称。</string>
     <string name="settings_speech_without_low_rates">USB 下更清晰的导航语音（实验性）</string>
     <string name="settings_speech_without_low_rates_description">USB 连接时，iPhone 可能以 8 kHz 电话音质发送导航播报和 Siri 的语音回答。开启后不再为这类声音提供 8 和 16 kHz，让 iPhone 选择更高的采样率。如果播报没有声音，请关闭。会重新连接 CarPlay。</string>
+    <string name="settings_microphone_without_48khz">麦克风不提供 48 kHz（实验性）</string>
+    <string name="settings_microphone_without_48khz_description">微信语音消息和微信通话在 iPhone 打开 48 kHz 麦克风流时会录成静音，而 Siri 和系统电话在较低采样率下正常。开启后麦克风最高只提供 32 kHz，让 iPhone 选择较低采样率。会重新连接 CarPlay。</string>
     <string name="settings_music_clock_trim">让音乐跟随车机时钟保持同步</string>
     <string name="settings_music_clock_trim_description" formatted="false">iPhone 和车机各自使用独立的音频时钟。时钟有偏差的车机会让音乐缓冲耗尽并短暂停顿，因此 Lincoln 会微调音乐轨道的播放速率来跟随它（最多 1.5%）。如果在音乐下听到细微的周期性噪声，请关闭此项；此时在有时钟偏差的车机上音乐可能偶尔停顿一下。会重新连接 CarPlay。</string>
     <string name="bluetooth_connections_not_real">此车机的系统蓝牙回报“已连接”，但实际上没有连到 iPhone：连一个不存在的服务也回报成功。这里的蓝牙由厂商自己的模块处理，应用无法使用，所以此车机无法使用无线 CarPlay。请尝试 USB 连接。</string>

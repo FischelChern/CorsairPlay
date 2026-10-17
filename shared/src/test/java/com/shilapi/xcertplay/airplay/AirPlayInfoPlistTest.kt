@@ -422,6 +422,33 @@ class AirPlayInfoPlistTest {
     }
 
     @Test
+    fun microphoneWithout48KhzKeepsLowerInputRatesAndLeavesOutputsAlone() {
+        val base = AirPlayConfig(
+            deviceName = "test",
+            deviceId = "02:00:00:00:00:03",
+            btMac = "02:00:00:00:00:03",
+            sourceVersion = "366.0",
+            main = AirPlayDisplayConfig(widthPixels = 1280, heightPixels = 720),
+        )
+        fun entry(config: AirPlayConfig, type: Int, audioType: String): Map<*, *> =
+            (AirPlayInfoPlist.build(config)["audioFormats"] as List<*>).map { it as Map<*, *> }
+                .single { it["type"] == type && it["audioType"] == audioType }
+        val on = base.copy(microphone = true, microphoneWithout48Khz = true)
+        val off = base.copy(microphone = true)
+        for (audioType in listOf("telephony", "speechRecognition")) {
+            assertEquals(0, entry(on, 100, audioType)["audioInputFormats"] as Int and 0x4000)
+            assertEquals(0, entry(on, 100, audioType)["audioInputFormats"] as Int and 0x400)
+            // 8, 16 and 32 kHz mono stay on offer.
+            assertEquals(0x154, entry(on, 100, audioType)["audioInputFormats"] as Int and 0x154)
+            assertEquals(0x4000, entry(off, 100, audioType)["audioInputFormats"] as Int and 0x4000)
+            assertEquals(
+                entry(off, 100, audioType)["audioOutputFormats"],
+                entry(on, 100, audioType)["audioOutputFormats"],
+            )
+        }
+    }
+
+    @Test
     fun speechWithout8And16KhzLeavesHigherRatesAndOtherStreams() {
         val base = AirPlayConfig(
             deviceName = "test",

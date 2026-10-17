@@ -4715,6 +4715,7 @@ class CarPlayHostActivity : ComponentActivity() {
             videoInCar = com.shilapi.xcertplay.hud.BydOutputSettings.videoWhileParkedActive(this),
             mainBufferedAudio = AirPlayPersistence.loadMainBufferedAudio(this),
             speechWithout8And16Khz = AirPlayPersistence.loadSpeechWithout8And16Khz(this),
+            microphoneWithout48Khz = AirPlayPersistence.loadMicrophoneWithout48Khz(this),
             disableAudioOutput = carBluetoothAudio,
         )
     }
