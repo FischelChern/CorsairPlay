@@ -51,5 +51,5 @@ CorsairPlay 是一个面向林肯/福特安卓车机的 CarPlay 增强项目。�
 
 ## 下载与反馈
 
-- 最新版本：https://github.com/kriskwok/DiPlay/releases/latest
-- 问题反馈：https://github.com/kriskwok/DiPlay/issues
+- 最新版本：https://github.com/kriskwok/CorsairPlay/releases/latest
+- 问题反馈：https://github.com/kriskwok/CorsairPlay/issues
