@@ -8,23 +8,23 @@ CorsairPlay 是面向林肯/福特车机的 CarPlay 增强版。支持有线/无
 
 1. CarPlay 模式：纯净画面，可隐藏原车状态栏/导航栏
 
-![download111](download111.png)
+![CarPlay 模式](docs/screenshots/download111.png)
 
 2. 桌面模式：自带状态栏和导航栏
 
-![car-screen-20261024](car-screen-20261024.png)
+![桌面模式](docs/screenshots/car-screen-20261024.png)
 
 3. 桌面模式：小卡片
 
-![car-screen-20261024-4](car-screen-20261024-4.png)
+![桌面模式小卡片](docs/screenshots/car-screen-20261024-4.png)
 
 4. 桌面模式：CarPlay 纯地图 + 小卡片
 
-![car-screen-20261024-5](car-screen-20261024-5.png)
+![CarPlay 纯地图和小卡片](docs/screenshots/car-screen-20261024-5.png)
 
 5. 桌面模式：CarPlay 原画大卡片
 
-![car-screen-20261024-3](car-screen-20261024-3.png)
+![CarPlay 原画大卡片](docs/screenshots/car-screen-20261024-3.png)
 
 ## 适配情况
 
@@ -62,7 +62,7 @@ CorsairPlay 是面向林肯/福特车机的 CarPlay 增强版。支持有线/无
   - 适合：你想获得同款桌面效果，但你是技术小白或懒得动手。我提供全程技术指导和售后服务，单次200～800，买我的时间和服务。
   - 同样适合你有桌面个性化定制需求，我来帮你实现，视时间成本收费。
 
-![pay](pay.png)
+![付款二维码](docs/screenshots/pay.png)
 
 ## 风险说明
 
