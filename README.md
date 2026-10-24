@@ -8,23 +8,23 @@ CorsairPlay 是面向林肯/福特车机的 CarPlay 增强版。支持有线/无
 
 1. CarPlay 模式：纯净画面，可隐藏原车状态栏/导航栏
 
-![CarPlay 模式](docs/screenshots/carplay-mode.png)
+![download111](download111.png)
 
 2. 桌面模式：自带状态栏和导航栏
 
-![桌面模式](docs/screenshots/desktop-mode.jpg)
+![car-screen-20261024](car-screen-20261024.png)
 
 3. 桌面模式：小卡片
 
-![桌面模式小卡片](docs/screenshots/desktop-mode-cards.jpg)
+![car-screen-20261024-4](car-screen-20261024-4.png)
 
 4. 桌面模式：CarPlay 纯地图 + 小卡片
 
-![桌面模式 CarPlay 纯地图和小卡片](docs/screenshots/desktop-map-cards.png)
+![car-screen-20261024-5](car-screen-20261024-5.png)
 
 5. 桌面模式：CarPlay 原画大卡片
 
-![桌面模式 CarPlay 原画大卡片](docs/screenshots/desktop-carplay-large.png)
+![car-screen-20261024-3](car-screen-20261024-3.png)
 
 ## 适配情况
 
@@ -54,10 +54,10 @@ CorsairPlay 是面向林肯/福特车机的 CarPlay 增强版。支持有线/无
 
 ## 合作说明
 
-- 桌面模式需要针对不同车型定制数据接口，可以提供个性化定制和长期维护等付费服务，有需要可联系作者（kriskwok666）。
-- 懒得动手的朋友自愿打赏 30 元以上，可直接获得最新代码和日常使用咨询（kriskwok666）。
+- 桌面模式需要针对不同车型定制数据接口，可以提供个性化定制和长期维护等付费服务，有需要可联系作者（kriskwok666）
+- 懒得从0开始的朋友自愿打赏 30 元以上，可直接获得最新代码或安装包（不保证能用也不提供定制和维护，需要懂AI Coding）
 
-![付款二维码](docs/screenshots/contact-pay.png)
+![pay](pay.png)
 
 ## 风险说明
 
