@@ -1,0 +1,20 @@
+[Unit]
+Description=CorsairPlay activation, diagnostics and update API
+After=network.target
+
+[Service]
+Type=simple
+User=corsairplay
+Group=corsairplay
+WorkingDirectory=/opt/corsairplay-server
+ExecStart=/usr/bin/python3 /opt/corsairplay-server/server.py
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/corsairplay
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

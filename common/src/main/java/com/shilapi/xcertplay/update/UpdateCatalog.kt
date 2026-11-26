@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.update
 
 import org.json.JSONArray
+import org.json.JSONObject
 
 /** The published release that a newer build can be downloaded from. */
 internal data class UpdateRelease(
@@ -37,5 +38,16 @@ internal object UpdateCatalog {
             return UpdateRelease(release.optString("tag_name"), apkName, apkUrl, checksumsUrl)
         }
         return null
+    }
+
+    /** Parses the single-release manifest published by the CorsairPlay update server. */
+    internal fun parseManifest(json: String): UpdateRelease? {
+        val release = JSONObject(json)
+        val tagName = release.optString("tag_name")
+        val apkName = release.optString("apk_name")
+        val apkUrl = release.optString("apk_url")
+        val checksumsUrl = release.optString("checksums_url")
+        if (tagName.isEmpty() || apkName.isEmpty() || apkUrl.isEmpty() || checksumsUrl.isEmpty()) return null
+        return UpdateRelease(tagName, apkName, apkUrl, checksumsUrl)
     }
 }

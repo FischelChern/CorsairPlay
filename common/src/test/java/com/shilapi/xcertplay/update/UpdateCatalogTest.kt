@@ -75,4 +75,26 @@ class UpdateCatalogTest {
     fun returnsNullForAnEmptyReleaseList() {
         assertNull(UpdateCatalog.parse("[]"))
     }
+
+    @Test
+    fun parsesTheServerManifest() {
+        val json = """
+            {
+              "tag_name": "0.2.25",
+              "apk_name": "CorsairPlay-0.2.25.apk",
+              "apk_url": "https://www.teamcc.net/api/updates/CorsairPlay-0.2.25.apk",
+              "checksums_url": "https://www.teamcc.net/api/updates/SHA256SUMS.txt"
+            }
+        """.trimIndent()
+        val release = UpdateCatalog.parseManifest(json)
+        assertEquals("0.2.25", release?.tagName)
+        assertEquals("CorsairPlay-0.2.25.apk", release?.apkName)
+        assertEquals("https://www.teamcc.net/api/updates/CorsairPlay-0.2.25.apk", release?.apkUrl)
+        assertEquals("https://www.teamcc.net/api/updates/SHA256SUMS.txt", release?.checksumsUrl)
+    }
+
+    @Test
+    fun returnsNullForAnIncompleteServerManifest() {
+        assertNull(UpdateCatalog.parseManifest("""{"tag_name":"0.0.0"}"""))
+    }
 }

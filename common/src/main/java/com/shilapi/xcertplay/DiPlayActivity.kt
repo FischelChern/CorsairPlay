@@ -197,6 +197,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     private var initialLaunch = true
     private var notificationTransport = true
     private var exportInProgress = false
+    private var uploadInProgress = false
     private var usbPermissionOperation: UsbPermissionSetup.Operation? = null
     private var usbPermissionDialog: AlertDialog? = null
     internal var usbPermissionOperationFactory: (Context) -> UsbPermissionSetup.Operation = {
@@ -207,6 +208,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     private var testToneTrack: AudioTrack? = null
     private var toneStop: Runnable? = null
     private var exportButton: Button? = null
+    private var uploadButton: Button? = null
     private var rootScroll: ScrollView? = null
     private var settingsRailScroll: ScrollView? = null
     private var reconnectBar: View? = null
@@ -673,6 +675,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         reconnectBar = null
         readinessCard = null
         exportButton = null
+        uploadButton = null
         bydAdbControls = null
         adbSwitches.clear()
         adbStatus = null
@@ -1755,6 +1758,10 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 saveReportToDownloads()
             }.apply { isEnabled = !exportInProgress }
             card.addView(exportButton, matchButton(10, 60))
+            uploadButton = button(if (uploadInProgress) getString(R.string.settings_uploading_report) else getString(R.string.settings_upload_diagnostic_report), false) {
+                startDiagnosticUpload()
+            }.apply { isEnabled = !uploadInProgress }
+            card.addView(uploadButton, matchButton(10, 60))
             card.addView(button(getString(R.string.choose_save_location), false) { chooseReportDestination() }, matchButton(10, 60))
             card.addView(button(getString(R.string.settings_report_on_phone), false) { openBackup(SettingsCategory.DIAGNOSTICS) }, matchButton(10, 60))
             val destination = getString(R.string.reports_save_to_downloads_diplay)
@@ -2535,6 +2542,12 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         section(content, getString(R.string.about_public_preview_prefix, version())) { card ->
             card.addView(label(getString(R.string.an_independent_carplay_receiver_for_android_head_units_wir), 17, TEXT))
             card.addView(updateRow())
+            val activationTitle = if (ActivationSettings.isActivated(this)) {
+                getString(R.string.settings_activation_active, ActivationSettings.expiresAt(this) ?: "—")
+            } else {
+                getString(R.string.settings_activation_activate)
+            }
+            card.addView(button(activationTitle, false) { showActivationDialog() }, matchButton(10, 60))
             toggle(card, getString(R.string.settings_background_update_checks),
                 getString(R.string.settings_background_update_checks_description),
                 UpdateAvailability.backgroundChecksEnabled(this)) { UpdateAvailability.saveBackgroundChecksEnabled(this, it) }
@@ -5595,6 +5608,104 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         // the result callback and the background writer's exception handler ever run.
         if (exportInProgress) return
         runCatching { export.launch(reportFileName()) }.onFailure { exportDiagnostics() }
+    }
+
+    private fun startDiagnosticUpload() {
+        if (uploadInProgress) return
+        val token = ActivationSettings.uploadToken(this)
+        if (token.isNullOrBlank()) {
+            appDialogBuilder().setTitle(getString(R.string.settings_upload_requires_activation_title))
+                .setMessage(getString(R.string.settings_upload_requires_activation))
+                .setPositiveButton(getString(R.string.settings_activation_activate)) { _, _ -> showActivationDialog() }
+                .setNegativeButton(getString(R.string.cancel), null).show()
+            return
+        }
+        uploadDiagnosticReport(DiagnosticUploadSettings.ENDPOINT, token)
+    }
+
+    private fun showActivationDialog() {
+        val input = EditText(appDialogContext()).apply {
+            hint = getString(R.string.settings_activation_code_hint)
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_TEXT
+        }
+        appDialogBuilder().setTitle(getString(R.string.settings_activation_title))
+            .setMessage(getString(R.string.settings_activation_description))
+            .setView(input)
+            .setPositiveButton(getString(R.string.settings_activation_activate)) { _, _ ->
+                val code = input.text.toString().trim()
+                if (code.isEmpty()) {
+                    toast(getString(R.string.settings_activation_code_required))
+                    return@setPositiveButton
+                }
+                submitActivation(code)
+            }
+            .setNegativeButton(getString(R.string.cancel), null).show()
+    }
+
+    private fun submitActivation(code: String) {
+        val context = applicationContext
+        val deviceId = ActivationSettings.deviceId(context)
+        Thread({
+            val result = runCatching { ActivationClient.activate(deviceId, code) }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                result.onSuccess { activation ->
+                    if (activation.active && !activation.uploadToken.isNullOrBlank()) {
+                        ActivationSettings.saveActivation(context, activation.uploadToken, activation.expiresAt)
+                        toast(getString(R.string.settings_activation_success))
+                        render()
+                        return@onSuccess
+                    }
+                    val message = when (activation.error) {
+                        "invalid_code" -> getString(R.string.settings_activation_invalid_code)
+                        "code_already_bound" -> getString(R.string.settings_activation_code_bound)
+                        else -> getString(R.string.settings_activation_failed)
+                    }
+                    appDialogBuilder().setTitle(getString(R.string.settings_activation_failed_title))
+                        .setMessage(message)
+                        .setPositiveButton(getString(R.string.close), null).show()
+                }.onFailure {
+                    toast(getString(R.string.settings_activation_network_error))
+                }
+            }
+        }, "diplay-activation").start()
+    }
+
+    private fun uploadDiagnosticReport(endpoint: String, token: String) {
+        if (uploadInProgress) return
+        uploadInProgress = true
+        uploadButton?.apply { isEnabled = false; text = getString(R.string.settings_uploading_report) }
+        val progress = appDialogBuilder()
+            .setTitle(getString(R.string.settings_uploading_report))
+            .setCancelable(false)
+            .show()
+        val appContext = applicationContext
+        Thread({
+            val result = runCatching {
+                val report = diagnosticReportText(appContext)
+                DiagnosticUploadClient.upload(endpoint, token, report)
+            }
+            runOnUiThread {
+                uploadInProgress = false
+                uploadButton?.apply { isEnabled = true; text = getString(R.string.settings_upload_diagnostic_report) }
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                runCatching { progress.dismiss() }
+                result.onSuccess {
+                    appDialogBuilder().setTitle(getString(R.string.settings_report_uploaded))
+                        .setPositiveButton(getString(R.string.close), null).show()
+                }.onFailure { failure ->
+                    val message = if (failure is DiagnosticUploadClient.HttpStatusException) {
+                        getString(R.string.settings_report_upload_failed_status, failure.statusCode)
+                    } else {
+                        getString(R.string.settings_report_upload_failed)
+                    }
+                    appDialogBuilder().setTitle(getString(R.string.settings_report_upload_failed_title))
+                        .setMessage(message)
+                        .setPositiveButton(getString(R.string.close), null).show()
+                }
+            }
+        }, "diplay-upload").start()
     }
 
     private fun exportDiagnostics(uri: Uri? = null) {

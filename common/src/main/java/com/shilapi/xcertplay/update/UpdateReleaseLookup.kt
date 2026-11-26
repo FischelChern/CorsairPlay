@@ -7,15 +7,16 @@ internal object UpdateReleaseLookup {
     fun latest(
         installedVersion: String,
         userAgent: String,
+        manifestUrl: String = UpdateClient.MANIFEST_URL,
         openConnection: (URL) -> URLConnection = { it.openConnection() },
     ): UpdateRelease? {
         val json = UpdateClient.fetchText(
-            UpdateClient.RELEASES_URL,
-            "application/vnd.github+json",
+            manifestUrl,
+            "application/json",
             userAgent,
             openConnection,
         )
-        val release = UpdateCatalog.parse(json) ?: return null
+        val release = UpdateCatalog.parseManifest(json) ?: return null
         return release.takeIf { UpdateVersion.isNewer(it.tagName, installedVersion) }
     }
 }
